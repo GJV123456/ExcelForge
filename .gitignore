@@ -1,0 +1,51 @@
+# =====================
+# dependencies
+# =====================
+node_modules/
+
+# =====================
+# build output
+# =====================
+dist/
+
+# =====================
+# environment
+# =====================
+.env
+.env.*
+!.env.example
+
+# =====================
+# logs
+# =====================
+*.log
+
+# =====================
+# IDE
+# =====================
+.vscode/
+.idea/
+
+# =====================
+# OS
+# =====================
+.DS_Store
+Thumbs.db
+
+# =====================
+# Python backend
+# =====================
+.venv/
+venv/
+env/
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+backend/app/frontend_dist/
+~$*.xls*
