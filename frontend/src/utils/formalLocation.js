@@ -20,7 +20,6 @@ export function validateFormalLocation(location) {
     if (!normalize(location.startStation)) return '请输入站点'
     if (normalize(location.startStation) !== normalize(location.endStation)) return '站点的开始站点和结束站点必须相同'
   }
-  if (location.type === '全线' && !location.direction) return '请选择行车方向'
-  if (location.type === '区间' && (!location.direction || !normalize(location.startStation) || !normalize(location.endStation))) return '请完整填写区间、方向和起止站点'
+  if (location.type === '区间' && (!normalize(location.startStation) || !normalize(location.endStation))) return '请完整填写区间起止站点'
   return ''
 }
