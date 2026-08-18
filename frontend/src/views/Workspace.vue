@@ -1,51 +1,58 @@
 <script setup>
+import { DocumentAdd } from '@element-plus/icons-vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import LocationForm from '../components/LocationForm.vue'
 import UploadExcel from '../components/UploadExcel.vue'
 import RuleBuilder from '../components/RuleBuilder.vue'
-import FormalRuleBuilder from '../components/FormalRuleBuilder.vue'
 import ExcelPreview from '../components/ExcelPreview.vue'
 import LoadingDialog from '../components/LoadingDialog.vue'
 import { useExcelStore } from '../store/excel'
 import { buildContent, extractEquipmentCode } from '../utils/excelParser'
+import { deriveEquipmentClassification } from '../utils/equipmentSubtype'
 import { processExcelV2 } from '../api/excel'
 import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
-import { attachFormalRules, ensureRuleTypes, validateFormalRules } from '../utils/formalRules'
 import { validateFormalLocation } from '../utils/formalLocation'
 
 const excel = useExcelStore()
 const loading = ref(false)
-const formalRules = ref({})
 const location = reactive({ type: '', direction: '', startStation: '', endStation: '' })
 const locationValue = computed({ get: () => location, set: (value) => Object.assign(location, value) })
 const submitLabel = computed(() => loading.value ? '正在生成正式文件...' : '生成正式文件')
+const defaultRuleFields = (headers = []) => [
+  '设备中文',
+  '设备类型',
+  '设备编码',
+  ...(headers.includes('信号描述') ? ['信号描述'] : []),
+  ...(headers.includes('附加编号') ? ['附加编号'] : [])
+].map((value) => ({ type: 'field', value }))
 const baseTestContents = computed(() => excel.rows.map((row, index) => ({
+  equipmentChinese: row['设备中文'] || row['测试内容'] || '',
+  signalDescription: row['信号描述'] || '',
+  additionalCode: row['附加编号'] || '',
   sortIndex: row.sortIndex || index + 1,
   generatedContent: excel.excelType === 'B' ? buildContent(row, excel.rules) : (row['测试内容'] || '[空]'),
   equipmentCode: excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || ''),
-  equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || '')
+  equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || ''),
+  ...deriveEquipmentClassification({
+    equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || ''),
+    equipmentCode: excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || ''),
+    equipmentChinese: row['设备中文'] || row['测试内容'] || '',
+    testContent: excel.excelType === 'A' ? (row['测试内容'] || '') : buildContent(row, excel.rules)
+  })
 })))
-const equipmentTypes = computed(() => [...new Set(baseTestContents.value.map((item) => item.equipmentType))])
-const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent }) => ({ sortIndex, generatedContent })))
+const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus }) => ({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus })))
 
 watch(preview, (value) => excel.setPreview(value), { immediate: true })
-watch(equipmentTypes, (types) => { formalRules.value = ensureRuleTypes(formalRules.value, types) }, { immediate: true })
 
 const parsed = ({ file, excelType, headers, rows }) => {
-  formalRules.value = {}
   excel.setExcel({ file, excelType, headers, rows })
-  excel.setRules(excelType === 'B' ? [
-    { type: 'field', value: '设备中文' },
-    { type: 'field', value: '设备类型' },
-    { type: 'field', value: '设备编码' }
-  ] : [])
+  excel.setRules(excelType === 'B' ? defaultRuleFields(headers) : [])
   ElMessage.success(excelType === 'A' ? '已识别为人工处理版' : '已识别为原始设备版，请配置生成规则')
 }
 
 const clear = () => {
-  formalRules.value = {}
   excel.reset()
 }
 
@@ -53,15 +60,14 @@ const validate = () => {
   const locationMessage = validateFormalLocation(location)
   if (locationMessage) return locationMessage
   if (!excel.rows.length) return '请先上传并解析 Excel 文件'
-  if (excel.excelType === 'B' && !excel.rules.length) return '请配置测试内容生成规则'
-  return validateFormalRules(equipmentTypes.value, formalRules.value)
+  return ''
 }
 
 const submit = async () => {
   if (loading.value) return
   const message = validate()
   if (message) return ElMessage.warning(message)
-  const testContents = attachFormalRules(baseTestContents.value, formalRules.value)
+  const testContents = baseTestContents.value
   loading.value = true
   try {
     const response = await processExcelV2({ testLocation: { ...location }, testContents })
@@ -81,10 +87,9 @@ const submit = async () => {
     <div class="page-title"><div><h1>测试内容生成工作台</h1><p>上传 Excel，配置规则，生成系统可导入的正式文件。</p></div></div>
     <el-card class="section-card"><template #header><b>1. 测试地点配置</b></template><LocationForm v-model="locationValue" /></el-card>
     <el-card class="section-card"><template #header><b>2. Excel 上传与解析</b></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /></el-card>
-    <el-card v-if="excel.excelType === 'B'" class="section-card"><template #header><b>3. 测试内容生成规则</b></template><RuleBuilder v-model="excel.rules" /></el-card>
+    <el-card v-if="excel.excelType === 'B'" class="section-card"><template #header><b>3. 测试内容生成规则</b></template><RuleBuilder v-model="excel.rules" :available-fields="excel.headers" /></el-card>
     <el-card v-if="excel.excelType" class="section-card"><template #header><b>{{ excel.excelType === 'B' ? '实时预览（前 5 条）' : 'Excel 数据预览（前 5 条）' }}</b></template><ExcelPreview :rows="excel.rows" :excel-type="excel.excelType" :preview="preview" /></el-card>
-    <el-card v-if="excel.excelType" class="section-card"><template #header><b>正式操作与结果规则</b></template><FormalRuleBuilder v-model="formalRules" :equipment-types="equipmentTypes" /></el-card>
-    <div v-if="excel.excelType" class="submit-panel"><el-button type="primary" size="large" :loading="loading" :disabled="loading" @click="submit">{{ submitLabel }}</el-button></div>
+    <div v-if="excel.excelType" class="submit-panel"><el-button class="submit-button" type="primary" size="large" :icon="DocumentAdd" :loading="loading" :disabled="loading" @click="submit">{{ submitLabel }}</el-button></div>
     <LoadingDialog :visible="loading" />
   </div>
 </template>

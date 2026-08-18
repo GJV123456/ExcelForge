@@ -9,14 +9,22 @@ const getMissingHeaders = (headers, requiredHeaders) => requiredHeaders.filter((
 const formatHeaders = (headers) => headers.length ? headers.join('、') : '无'
 const createHeaderError = (headers) => {
   const names = headers.map(normalize).filter(Boolean)
+  if (!names.length) return new Error('未检测到表头：请确认 Excel 第 1 行是表头，并且文件内容不为空。')
+
+  const matchedA = typeAHeaders.filter((key) => names.includes(key))
+  const matchedB = typeBHeaders.filter((key) => names.includes(key))
   const typeAMissing = getMissingHeaders(names, typeAHeaders)
   const typeBMissing = getMissingHeaders(names, typeBHeaders)
-  return new Error([
-    '未检测到有效表头，请检查 Excel 第一行。',
-    `当前检测到：${formatHeaders(names)}。`,
-    `类型A（人工处理版）必须包含：${typeAHeaders.join('、')}；缺少：${formatHeaders(typeAMissing)}。`,
-    `类型B（原始设备版）必须包含：${typeBHeaders.join('、')}；缺少：${formatHeaders(typeBMissing)}。`
-  ].join('\n'))
+
+  if (matchedA.length > matchedB.length) {
+    return new Error(`表头不匹配：人工处理版缺少「${formatHeaders(typeAMissing)}」。当前表头：${formatHeaders(names)}。`)
+  }
+
+  if (matchedB.length > matchedA.length) {
+    return new Error(`表头不匹配：原始设备版缺少「${formatHeaders(typeBMissing)}」。当前表头：${formatHeaders(names)}。`)
+  }
+
+  return new Error(`表头不匹配：第 1 行需要包含「${typeAHeaders.join('、')}」或「${typeBHeaders.join('、')}」。当前表头：${formatHeaders(names)}。`)
 }
 
 export function detectExcelType(headers) {
