@@ -9,8 +9,12 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 const customText = ref('')
+const optionalFields = ['信号描述', '附加编号']
 const rules = computed({ get: () => props.modelValue, set: (value) => emit('update:modelValue', value) })
-const addField = (value) => { if (!rules.value.some((item) => item.type === 'field' && item.value === value)) rules.value = [...rules.value, { type: 'field', value }] }
+const addField = (value) => {
+  if (rules.value.some((item) => item.type === 'field' && item.value === value)) return
+  rules.value = [...rules.value, { type: 'field', value, ...(optionalFields.includes(value) ? { optional: true } : {}) }]
+}
 const addText = () => { if (customText.value.trim()) { rules.value = [...rules.value, { type: 'text', value: customText.value.trim() }]; customText.value = '' } }
 const remove = (index) => rules.value = rules.value.filter((_, i) => i !== index)
 const fieldOptions = computed(() => props.availableFields)

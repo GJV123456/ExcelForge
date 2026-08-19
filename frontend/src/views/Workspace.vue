@@ -20,13 +20,17 @@ const loading = ref(false)
 const location = reactive({ type: '', direction: '', startStation: '', endStation: '' })
 const locationValue = computed({ get: () => location, set: (value) => Object.assign(location, value) })
 const submitLabel = computed(() => loading.value ? '正在生成正式文件...' : '生成正式文件')
-const defaultRuleFields = (headers = []) => [
-  '设备中文',
-  '设备类型',
-  '设备编码',
-  ...(headers.includes('信号描述') ? ['信号描述'] : []),
-  ...(headers.includes('附加编号') ? ['附加编号'] : [])
-].map((value) => ({ type: 'field', value }))
+const isSpecialModuleSheet = (rows = []) => rows[0]?.['设备类型'] === '特殊模块'
+const defaultRuleFields = (headers = [], rows = []) => {
+  if (isSpecialModuleSheet(rows)) return [{ type: 'field', value: '设备中文' }]
+  return [
+    { type: 'field', value: '设备中文' },
+    { type: 'field', value: '设备类型' },
+    { type: 'field', value: '设备编码' },
+    ...(headers.includes('信号描述') ? [{ type: 'field', value: '信号描述', optional: true }] : []),
+    ...(headers.includes('附加编号') ? [{ type: 'field', value: '附加编号', optional: true }] : [])
+  ]
+}
 const baseTestContents = computed(() => excel.rows.map((row, index) => ({
   equipmentChinese: row['设备中文'] || row['测试内容'] || '',
   signalDescription: row['信号描述'] || '',
@@ -39,6 +43,7 @@ const baseTestContents = computed(() => excel.rows.map((row, index) => ({
     equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || ''),
     equipmentCode: excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || ''),
     equipmentChinese: row['设备中文'] || row['测试内容'] || '',
+    signalDescription: row['信号描述'] || '',
     testContent: excel.excelType === 'A' ? (row['测试内容'] || '') : buildContent(row, excel.rules)
   })
 })))
@@ -48,7 +53,7 @@ watch(preview, (value) => excel.setPreview(value), { immediate: true })
 
 const parsed = ({ file, excelType, headers, rows }) => {
   excel.setExcel({ file, excelType, headers, rows })
-  excel.setRules(excelType === 'B' ? defaultRuleFields(headers) : [])
+  excel.setRules(excelType === 'B' ? defaultRuleFields(headers, rows) : [])
   ElMessage.success(excelType === 'A' ? '已识别为人工处理版' : '已识别为原始设备版，请配置生成规则')
 }
 

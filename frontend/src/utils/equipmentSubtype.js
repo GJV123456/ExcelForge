@@ -35,7 +35,7 @@ const rules = [
   {
     equipmentTypes: ['监视模块'],
     subtype: 'AFC',
-     keywords: ['AFC'],
+    keywords: ['AFC'],
     fields: ['AFC切非反馈', 'AFC切非', 'AFC状态反馈', 'AFC释放控制']
   },
   {
@@ -53,7 +53,7 @@ const rules = [
     equipmentTypes: ['监视模块'],
     subtype: '垂直电梯',
     keywords: ['垂直电梯'],
-   fields: ['垂直电梯状态反馈', '垂直电梯归首控制']
+    fields: ['垂直电梯状态反馈', '垂直电梯归首控制']
   },
   {
     equipmentTypes: ['控制模块'],
@@ -64,6 +64,12 @@ const rules = [
 
   {
     equipmentTypes: ['监视模块'],
+    subtype: '防火卷帘',
+    keywords: ['RS', '防火卷帘'],
+    fields: ['防火卷帘一次降落反馈', '防火卷帘一次降落控制', '防火卷帘二次降落反馈', '防火卷帘二次降落控制']
+  },
+  {
+    equipmentTypes: ['控制模块'],
     subtype: '防火卷帘',
     keywords: ['RS', '防火卷帘'],
     fields: ['防火卷帘一次降落反馈', '防火卷帘一次降落控制', '防火卷帘二次降落反馈', '防火卷帘二次降落控制']
@@ -95,12 +101,32 @@ const rules = [
       '水流指示器动作反馈'
     ]
   },
+  {
+    equipmentTypes: ['控制模块'],
+    subtype: '消防泵',
+    keywords: ['消防泵'],
+    fields: [
+      '消防泵启动控制',
+    ]
+  },
+
   { equipmentTypes: ['监视模块'], subtype: '防火门', keywords: ['防火门', '联络通道DI'], fields: [] },
-  { equipmentTypes: ['监视模块'], subtype: '门禁', keywords: ['门禁'], fields: ['门禁释放反馈', '门禁释放'] },
+  {
+    equipmentTypes: ['监视模块'],
+    subtype: '门禁',
+    keywords: ['门禁'],
+    fields: ['门禁释放反馈', '门禁释放']
+  },
+  {
+    equipmentTypes: ['控制模块'],
+    subtype: '门禁',
+    keywords: ['门禁'],
+    fields: ['门禁释放反馈', '门禁释放']
+  },
   {
     equipmentTypes: ['监视模块'],
     subtype: '电气火灾、消防电源、应急疏散',
-    keywords: ['电气火灾', '消防电源', '应急疏散'],
+    keywords: ['电气火灾', '消防电源', '应急照明及疏散'],
     fields: [
       '电气火灾监控报警',
       '电气火灾监控故障反馈',
@@ -110,6 +136,20 @@ const rules = [
       '应急照明及疏散指示系统模式控制'
     ]
   },
+  {
+    equipmentTypes: ['控制模块'],
+    subtype: '电气火灾、消防电源、应急疏散',
+    keywords: ['电气火灾', '消防电源', '应急照明及疏散'],
+    fields: [
+      '电气火灾监控报警',
+      '电气火灾监控故障反馈',
+      '消防电源监控系统报警',
+      '消防电源监控系统故障反馈',
+      '应急照明及疏散指示系统状态反馈',
+      '应急照明及疏散指示系统模式控制'
+    ]
+  },
+
   {
     equipmentTypes: ['控制模块'],
     subtype: '吸气式主机',
@@ -132,10 +172,15 @@ const rules = [
     equipmentTypes: ['控制模块'],
     subtype: '声光报警器',
     keywords: ['SG', '声光'],
-    fields: [matchedField('声光报警控制', ['声光报警控制', '声光控制']), '声光交替模块']
+    fields: ['声光报警控制', '声光控制', '声光交替模块']
   },
   { equipmentTypes: ['控制模块'], subtype: 'PA', keywords: ['PA', '广播交替模块'], fields: ['PA广播状态保持', 'PA广播', '广播交替模块'] },
-  { equipmentTypes: ['控制模块'], subtype: '消火栓点灯', keywords: ['消火栓按钮点灯'], fields: ['消火栓按钮点灯'] },
+  {
+    equipmentTypes: ['控制模块'],
+    subtype: '消火栓点灯',
+    keywords: ['消火栓按钮点灯'],
+    fields: []
+  },
   {
     equipmentTypes: ['控制模块'],
     subtype: '主机手自动、人工确认',
@@ -146,19 +191,19 @@ const rules = [
     equipmentTypes: ['特殊模块'],
     subtype: '气灭测试',
     match: ({ text, testContent }) => text.includes('气灭测试') || testContent.includes('气灭测试'),
-    fields: ['气灭测试']
+    fields: []
   },
   {
     equipmentTypes: ['特殊模块'],
     subtype: '区间电话',
     match: ({ text }) => text.includes('区间插孔') && text.includes('消防电话插孔'),
-    fields: ['消防电话插孔']
+    fields: []
   },
   {
     equipmentTypes: ['特殊模块'],
     subtype: '站内电话',
-    keywords: ['消防电话插孔'],
-    fields: ['消防电话插孔']
+    keywords: ['消防电话插孔','消防电话分机'],
+    fields: []
   },
   {
     equipmentTypes: ['排烟机', '加压送风机'],
@@ -168,12 +213,20 @@ const rules = [
     match: () => true
   },
   {
+    equipmentTypes: ['风阀'],
+    subtype: '',
+    keywords: [],
+    fields: ['动作状态', '监视模块故障状态', '开控制命令', '控制模块故障状态'],
+    match: () => true
+  },
+  {
     equipmentTypes: ['防火阀'],
     subtype: '电动防火阀',
     fields: [
-      matchedField('动作状态', ['动作状态']),
-      matchedField('关控制命令', ['关控制命令']),
-      matchedField('FF2', ['FF2'])
+      '动作状态',
+      '监视模块故障状态',
+      '关控制命令',
+      '控制模块故障状态'
     ],
     match: ({ code, text, upperText }) => code.includes('FF2') || includesKeyword(text, upperText, 'FF2')
   },
@@ -186,32 +239,40 @@ const rules = [
 ]
 
 const findMatchedField = (rule, text, upperText) => {
-  for (const item of rule.fields || []) {
-    const config = typeof item === 'string' ? matchedField(item) : item
+  const fieldConfigs = (rule.fields || [])
+    .map((item) => typeof item === 'string' ? matchedField(item) : item)
+    .sort((a, b) => Math.max(...b.aliases.map((alias) => normalize(alias).length)) - Math.max(...a.aliases.map((alias) => normalize(alias).length)))
+
+  for (const config of fieldConfigs) {
     if (includesAny(text, upperText, config.aliases)) return config.value
   }
   return ''
 }
 
-const findRule = ({ equipmentType, equipmentChinese, equipmentCode = '', testContent = '' }) => {
+const findRule = ({ equipmentType, equipmentChinese, equipmentCode = '', signalDescription = '', testContent = '' }) => {
   const type = normalize(equipmentType)
   const text = normalize(equipmentChinese)
   const upperText = normalizeCase(equipmentChinese)
+  const signalText = normalize(signalDescription)
+  const signalUpperText = normalizeCase(signalDescription)
   const normalizedTestContent = normalize(testContent)
   const code = normalizeCase(equipmentCode)
-
-  return rules.find((rule) => {
+  const matchesRule = (rule, sourceText, sourceUpperText) => {
     if (!rule.equipmentTypes.includes(type)) return false
-    if (rule.match) return rule.match({ text, upperText, code, testContent: normalizedTestContent })
-    return includesAny(text, upperText, rule.keywords)
-  })
+    if (rule.match) return rule.match({ text: sourceText, upperText: sourceUpperText, code, testContent: normalizedTestContent })
+    return includesAny(sourceText, sourceUpperText, rule.keywords)
+  }
+
+  return rules.find((rule) => matchesRule(rule, text, upperText)) || rules.find((rule) => matchesRule(rule, signalText, signalUpperText))
 }
 
 export function deriveEquipmentClassification(input) {
-  const text = normalize([input.equipmentChinese, input.equipmentCode, input.testContent].filter(Boolean).join(' '))
-  const upperText = normalizeCase(text)
+  const equipmentText = normalize([input.equipmentChinese, input.equipmentCode].filter(Boolean).join(' '))
+  const signalText = normalize(input.signalDescription)
   const matched = findRule(input)
-  const equipmentStatus = matched ? findMatchedField(matched, text, upperText) : ''
+  const statusFromEquipmentChinese = matched ? findMatchedField(matched, equipmentText, normalizeCase(equipmentText)) : ''
+  const statusFromSignalDescription = matched && !statusFromEquipmentChinese ? findMatchedField(matched, signalText, normalizeCase(signalText)) : ''
+  const equipmentStatus = statusFromEquipmentChinese || statusFromSignalDescription
 
   return {
     equipmentSubtype: matched?.subtype || '',

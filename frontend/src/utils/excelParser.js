@@ -51,7 +51,11 @@ export async function parseExcel(file) {
 }
 
 export function buildContent(row, rules) {
-  return rules.map((rule) => rule.type === 'field' ? (normalize(row[rule.value]) || '[空]') : rule.value).join('')
+  return rules.map((rule) => {
+    if (rule.type !== 'field') return rule.value
+    const value = normalize(row[rule.value])
+    return value || ''
+  }).join('')
 }
 
 export function extractEquipmentCode(content) {

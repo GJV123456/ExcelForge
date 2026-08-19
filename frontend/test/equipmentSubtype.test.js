@@ -41,9 +41,9 @@ test('derives fire damper subtypes from equipment code and chinese keywords', ()
     deriveEquipmentClassification({ equipmentType: '防火阀', equipmentCode: 'FP1-B7', equipmentChinese: '防火阀关控制命令' }),
     { equipmentSubtype: '手动防火阀', equipmentStatus: '' }
   )
-  assert.equal(
-    deriveEquipmentClassification({ equipmentType: '防火阀', equipmentCode: 'FF2-B211', equipmentChinese: '防火阀' }).equipmentStatus,
-    'FF2'
+  assert.deepEqual(
+    deriveEquipmentClassification({ equipmentType: '防火阀', equipmentCode: 'FF2-B211', equipmentChinese: '防火阀' }),
+    { equipmentSubtype: '电动防火阀', equipmentStatus: '' }
   )
   assert.deepEqual(
     deriveEquipmentClassification({ equipmentType: '防火阀', equipmentChinese: 'FF1动作状态' }),
@@ -67,4 +67,66 @@ test('derives EPS subtype for control module rows', () => {
   const result = deriveEquipmentClassification({ equipmentType: '控制模块', equipmentChinese: '站厅B端应急照明BH-EPS启动控制' })
 
   assert.deepEqual(result, { equipmentSubtype: 'EPS', equipmentStatus: '启动控制' })
+})
+
+test('falls back to signal description when equipment chinese has no status field', () => {
+  assert.deepEqual(
+    deriveEquipmentClassification({
+      equipmentType: '控制模块',
+      equipmentChinese: '站厅B端应急照明BH-EPS',
+      signalDescription: '启动控制'
+    }),
+    { equipmentSubtype: 'EPS', equipmentStatus: '启动控制' }
+  )
+})
+
+test('prefers status from equipment chinese over signal description', () => {
+  assert.deepEqual(
+    deriveEquipmentClassification({
+      equipmentType: '控制模块',
+      equipmentChinese: '站厅B端应急照明BH-EPS状态反馈',
+      signalDescription: '启动控制'
+    }),
+    { equipmentSubtype: 'EPS', equipmentStatus: '状态反馈' }
+  )
+})
+
+test('derives air valve status fields', () => {
+  for (const field of ['动作状态', '监视模块故障状态', '开控制命令', '控制模块故障状态']) {
+    assert.deepEqual(
+      deriveEquipmentClassification({ equipmentType: '风阀', equipmentChinese: `站厅风阀${field}` }),
+      { equipmentSubtype: '', equipmentStatus: field }
+    )
+  }
+})
+
+test('derives air valve status from signal description fallback', () => {
+  assert.deepEqual(
+    deriveEquipmentClassification({
+      equipmentType: '风阀',
+      equipmentChinese: '站厅风阀',
+      signalDescription: '控制模块故障状态'
+    }),
+    { equipmentSubtype: '', equipmentStatus: '控制模块故障状态' }
+  )
+})
+
+test('derives electric fire damper status fields without using FF2 as status', () => {
+  for (const field of ['动作状态', '监视模块故障状态', '关控制命令', '控制模块故障状态']) {
+    assert.deepEqual(
+      deriveEquipmentClassification({ equipmentType: '防火阀', equipmentCode: 'FF2-B905', equipmentChinese: `电动防火阀${field}` }),
+      { equipmentSubtype: '电动防火阀', equipmentStatus: field }
+    )
+  }
+})
+
+test('prefers the longer fire pump water level status', () => {
+  assert.deepEqual(
+    deriveEquipmentClassification({ equipmentType: '监视模块', equipmentChinese: '站厅B端低水位报警反馈' }),
+    { equipmentSubtype: '消防泵', equipmentStatus: '低水位报警反馈' }
+  )
+  assert.deepEqual(
+    deriveEquipmentClassification({ equipmentType: '监视模块', equipmentChinese: '站厅B端最低水位报警反馈' }),
+    { equipmentSubtype: '消防泵', equipmentStatus: '最低水位报警反馈' }
+  )
 })
