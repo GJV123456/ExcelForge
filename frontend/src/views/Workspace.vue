@@ -13,7 +13,7 @@ import { deriveEquipmentClassification } from '../utils/equipmentSubtype'
 import { processExcelV2 } from '../api/excel'
 import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
-import { validateFormalLocation } from '../utils/formalLocation'
+import { buildTestLocation, validateFormalLocation } from '../utils/formalLocation'
 
 const excel = useExcelStore()
 const loading = ref(false)
@@ -47,7 +47,7 @@ const baseTestContents = computed(() => excel.rows.map((row, index) => ({
     testContent: excel.excelType === 'A' ? (row['测试内容'] || '') : buildContent(row, excel.rules)
   })
 })))
-const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus }) => ({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus })))
+const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName }) => ({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName })))
 
 watch(preview, (value) => excel.setPreview(value), { immediate: true })
 
@@ -75,7 +75,7 @@ const submit = async () => {
   const testContents = baseTestContents.value
   loading.value = true
   try {
-    const response = await processExcelV2({ testLocation: { ...location }, testContents })
+    const response = await processExcelV2({ testLocation: buildTestLocation(location), testContents })
     if (!response.data || response.data.size === 0) throw Object.assign(new Error('empty file'), { publicMessage: '文件生成失败' })
     downloadResponseBlob(response)
     ElMessage.success('正式文件生成成功，已开始下载')

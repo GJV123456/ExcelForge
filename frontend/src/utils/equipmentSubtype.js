@@ -11,6 +11,7 @@ const includesKeyword = (text, upperText, keyword) => {
 const includesAny = (text, upperText, keywords = []) => keywords.some((keyword) => includesKeyword(text, upperText, keyword))
 
 const matchedField = (value, aliases = [value]) => ({ value, aliases })
+const intervalNamePattern = /([\u4e00-\u9fa5A-Za-z0-9]+)区间(?:上行|下行)/
 
 const rules = [
   { equipmentTypes: ['监视模块'], subtype: '吸气式主机', keywords: ['ASD'], fields: ['预警', '火警', '故障', '远程复位'] },
@@ -273,11 +274,18 @@ export function deriveEquipmentClassification(input) {
   const statusFromEquipmentChinese = matched ? findMatchedField(matched, equipmentText, normalizeCase(equipmentText)) : ''
   const statusFromSignalDescription = matched && !statusFromEquipmentChinese ? findMatchedField(matched, signalText, normalizeCase(signalText)) : ''
   const equipmentStatus = statusFromEquipmentChinese || statusFromSignalDescription
+  const intervalName = matched?.subtype === '感温光纤' ? extractIntervalName(input.equipmentChinese) : ''
 
-  return {
+  const result = {
     equipmentSubtype: matched?.subtype || '',
     equipmentStatus
   }
+  if (matched?.subtype === '感温光纤') result.intervalName = intervalName
+  return result
+}
+
+export function extractIntervalName(content) {
+  return normalize(content).match(intervalNamePattern)?.[1] || ''
 }
 
 export function deriveEquipmentSubtype(input) {

@@ -10,12 +10,16 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 const customText = ref('')
 const optionalFields = ['信号描述', '附加编号']
+const commonTexts = [
+  { label: '报警及故障状态', value: '报警及故障状态' }
+]
 const rules = computed({ get: () => props.modelValue, set: (value) => emit('update:modelValue', value) })
 const addField = (value) => {
   if (rules.value.some((item) => item.type === 'field' && item.value === value)) return
   rules.value = [...rules.value, { type: 'field', value, ...(optionalFields.includes(value) ? { optional: true } : {}) }]
 }
 const addText = () => { if (customText.value.trim()) { rules.value = [...rules.value, { type: 'text', value: customText.value.trim() }]; customText.value = '' } }
+const addCommonText = (value) => { if (value) rules.value = [...rules.value, { type: 'text', value }] }
 const remove = (index) => rules.value = rules.value.filter((_, i) => i !== index)
 const fieldOptions = computed(() => props.availableFields)
 </script>
@@ -24,7 +28,16 @@ const fieldOptions = computed(() => props.availableFields)
   <div class="rule-builder">
     <p class="muted">点击字段加入规则，再拖动标签调整生成顺序。</p>
     <div class="field-actions"><el-button v-for="field in fieldOptions" :key="field" @click="addField(field)">+ {{ field }}</el-button></div>
-    <div class="text-actions"><el-input v-model="customText" placeholder="输入自定义文字，例如：报警测试" @keyup.enter="addText" /><el-button type="primary" :icon="Plus" @click="addText">添加文字</el-button></div>
+    <div class="text-actions">
+      <div class="custom-text-control">
+        <el-input v-model="customText" placeholder="输入自定义文字，例如：报警测试" @keyup.enter="addText" />
+        <el-button type="primary" :icon="Plus" @click="addText">添加文字</el-button>
+      </div>
+      <div class="quick-texts">
+        <span class="quick-text-label">常用：</span>
+        <el-button v-for="item in commonTexts" :key="item.label" class="quick-text-button" text @click="addCommonText(item.value)">{{ item.label }}</el-button>
+      </div>
+    </div>
     <draggable v-model="rules" item-key="value" class="rule-list" ghost-class="dragging">
       <template #item="{ element, index }"><div class="rule-item"><el-tag :type="element.type === 'field' ? 'primary' : 'success'">{{ element.type === 'field' ? '字段：' : '文字：' }}{{ element.value }}</el-tag><el-button text type="danger" :icon="Delete" @click="remove(index)" /></div></template>
     </draggable>

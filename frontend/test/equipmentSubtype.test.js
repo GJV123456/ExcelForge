@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { deriveEquipmentClassification, deriveEquipmentSubtype, deriveEquipmentStatus } from '../src/utils/equipmentSubtype.js'
+import { deriveEquipmentClassification, deriveEquipmentSubtype, deriveEquipmentStatus, extractIntervalName } from '../src/utils/equipmentSubtype.js'
 
 test('derives monitoring module subtypes from equipment chinese keywords', () => {
   assert.equal(deriveEquipmentSubtype({ equipmentType: '监视模块', equipmentChinese: 'ASD预警' }), '吸气式主机')
@@ -128,5 +128,22 @@ test('prefers the longer fire pump water level status', () => {
   assert.deepEqual(
     deriveEquipmentClassification({ equipmentType: '监视模块', equipmentChinese: '站厅B端最低水位报警反馈' }),
     { equipmentSubtype: '消防泵', equipmentStatus: '最低水位报警反馈' }
+  )
+})
+
+test('extracts interval name for temperature optical fiber rows', () => {
+  assert.equal(extractIntervalName('角石区间上行感温光纤报警反馈'), '角石')
+  assert.equal(extractIntervalName('角石区间下行感温光纤报警反馈'), '角石')
+  assert.equal(extractIntervalName('角石区间感温光纤报警反馈'), '')
+  assert.deepEqual(
+    deriveEquipmentClassification({ equipmentType: '监视模块', equipmentChinese: '角石区间上行感温光纤报警反馈' }),
+    { equipmentSubtype: '感温光纤', equipmentStatus: '上行感温光纤报警反馈', intervalName: '角石' }
+  )
+})
+
+test('keeps interval name empty for non optical fiber rows', () => {
+  assert.deepEqual(
+    deriveEquipmentClassification({ equipmentType: '监视模块', equipmentChinese: '站厅B端消防泵故障反馈' }),
+    { equipmentSubtype: '消防泵', equipmentStatus: '消防泵故障反馈' }
   )
 })

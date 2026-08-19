@@ -5,7 +5,15 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: () => import('../views/Login.vue'), meta: { public: true } },
-    { path: '/', component: () => import('../views/Layout.vue'), children: [{ path: '', component: () => import('../views/Workspace.vue') }] },
+    {
+      path: '/',
+      component: () => import('../views/Layout.vue'),
+      redirect: '/workspace',
+      children: [
+        { path: 'workspace', component: () => import('../views/Workspace.vue') },
+        { path: 'config', component: () => import('../views/Config.vue') }
+      ]
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' }
   ]
 })

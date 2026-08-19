@@ -4,14 +4,43 @@ export function changeLocationType(location, type) {
   const next = { ...location, type }
   if (type === '站点') {
     const station = normalize(location.startStation || location.endStation)
-    return { ...next, direction: '', startStation: station, endStation: station }
+    return { ...next, direction: '', startStation: station, endStation: station, stations: station ? [station] : [''] }
   }
-  if (type === '全线') return { ...next, startStation: '', endStation: '' }
-  return next
+  if (type === '全线') return { ...next, startStation: '', endStation: '', stations: [] }
+  return { ...next, stations: [] }
 }
 
 export function changeStation(location, station) {
-  return { ...location, startStation: station, endStation: station }
+  return { ...location, startStation: station, endStation: station, stations: station ? [station] : [''] }
+}
+
+export function buildTestLocation(location) {
+  if (location.type === '全线') {
+    return { type: location.type, direction: location.direction || '', startStation: '', endStation: '' }
+  }
+
+  if (location.type === '区间') {
+    return {
+      type: location.type,
+      direction: location.direction || '',
+      startStation: normalize(location.startStation),
+      endStation: normalize(location.endStation)
+    }
+  }
+
+  if (location.type === '站点') {
+    const stations = (Array.isArray(location.stations) ? location.stations : [location.startStation]).map(normalize).filter(Boolean)
+    const firstStation = stations[0] || ''
+    return {
+      type: location.type,
+      direction: '',
+      startStation: firstStation,
+      endStation: firstStation,
+      stations
+    }
+  }
+
+  return { type: location.type || '', direction: location.direction || '', startStation: '', endStation: '' }
 }
 
 export function validateFormalLocation(location) {
