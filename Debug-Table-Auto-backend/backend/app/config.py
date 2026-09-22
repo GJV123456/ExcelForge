@@ -1,0 +1,87 @@
+"""Environment-backed application settings."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Literal, cast
+
+ApplicationMode = Literal["mock", "formal"]
+
+
+def _mode_from_environment() -> ApplicationMode:
+    value = os.getenv("EXCELFORGE_MODE", "mock").strip().lower()
+    if value not in {"mock", "formal"}:
+        raise ValueError("EXCELFORGE_MODE must be 'mock' or 'formal'")
+    return cast(ApplicationMode, value)
+
+
+def _mock_delay_from_environment() -> float:
+    raw_value = os.getenv("EXCELFORGE_MOCK_DELAY_SECONDS", "0")
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise ValueError("EXCELFORGE_MOCK_DELAY_SECONDS must be a number") from error
+    if not 0 <= value <= 10:
+        raise ValueError("EXCELFORGE_MOCK_DELAY_SECONDS must be between 0 and 10")
+    return value
+
+
+def _template_path_from_environment() -> Path | None:
+    value = os.getenv("EXCELFORGE_TEMPLATE_PATH", "").strip()
+    return Path(value) if value else None
+
+
+def _frontend_dist_from_environment() -> Path | None:
+    value = os.getenv("EXCELFORGE_FRONTEND_DIST", "").strip()
+    return Path(value) if value else None
+
+
+def _database_path_from_environment() -> Path | None:
+    value = os.getenv("EXCELFORGE_DATABASE_PATH", "").strip()
+    return Path(value) if value else None
+
+
+def _optional_text_from_environment(name: str) -> str | None:
+    value = os.getenv(name, "").strip()
+    return value or None
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    """Runtime settings with production-safe defaults."""
+
+    mode: ApplicationMode = "mock"
+    mock_delay_seconds: float = 0
+    template_path: Path | None = None
+    frontend_dist_path: Path | None = None
+    database_path: Path | None = None
+    auth_username: str | None = None
+    auth_password: str | None = None
+    auth_display_name: str | None = None
+
+    @classmethod
+    def from_environment(cls) -> Settings:
+        return cls(
+            mode=_mode_from_environment(),
+            mock_delay_seconds=_mock_delay_from_environment(),
+            template_path=_template_path_from_environment(),
+            frontend_dist_path=_frontend_dist_from_environment(),
+            database_path=_database_path_from_environment(),
+            auth_username=_optional_text_from_environment("EXCELFORGE_AUTH_USERNAME"),
+            auth_password=_optional_text_from_environment("EXCELFORGE_AUTH_PASSWORD"),
+            auth_display_name=_optional_text_from_environment("EXCELFORGE_AUTH_DISPLAY_NAME"),
+        )
+
+
+def apply_packaged_defaults(settings: Settings, *, is_frozen: bool) -> Settings:
+    """Supply local desktop bootstrap credentials only for packaged applications."""
+    if not is_frozen or settings.auth_username is not None or settings.auth_password is not None:
+        return settings
+    return replace(
+        settings,
+        auth_username="admin",
+        auth_password="123456",
+        auth_display_name=settings.auth_display_name or "管理员",
+    )

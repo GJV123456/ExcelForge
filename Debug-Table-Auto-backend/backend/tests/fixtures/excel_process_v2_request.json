@@ -1,0 +1,53 @@
+{
+  "testLocation": {
+    "type": "站点",
+    "direction": "",
+    "startStation": "角江路站",
+    "endStation": "角江路站"
+  },
+  "testContents": [
+    {
+      "sortIndex": 1,
+      "generatedContent": "内容A",
+      "equipmentCode": "A01",
+      "equipmentType": "类型A",
+      "operationSteps": [
+        {
+          "description": "步骤A1",
+          "ratioChange": "否",
+          "results": [
+            { "description": "结果A11", "responsibleDisciplines": ["FAS"] },
+            { "description": "结果A12", "responsibleDisciplines": ["FAS", "综合监控"] },
+            { "description": "结果A13", "responsibleDisciplines": ["综合监控"] },
+            { "description": "结果A14", "responsibleDisciplines": ["现场"] }
+          ]
+        },
+        {
+          "description": "步骤A2",
+          "ratioChange": "否",
+          "results": [
+            { "description": "结果A21", "responsibleDisciplines": ["FAS"] },
+            { "description": "结果A22", "responsibleDisciplines": ["FAS", "综合监控"] },
+            { "description": "结果A23", "responsibleDisciplines": ["综合监控"] }
+          ]
+        }
+      ]
+    },
+    {
+      "sortIndex": 2,
+      "generatedContent": "内容B",
+      "equipmentCode": "B01",
+      "equipmentType": "类型B",
+      "operationSteps": [
+        {
+          "description": "步骤B1",
+          "ratioChange": "否",
+          "results": [
+            { "description": "结果B11", "responsibleDisciplines": ["FAS"] },
+            { "description": "结果B12", "responsibleDisciplines": ["综合监控"] }
+          ]
+        }
+      ]
+    }
+  ]
+}

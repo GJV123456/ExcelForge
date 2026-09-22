@@ -11,8 +11,10 @@ const resetUpload = () => {
   emit('clear')
 }
 const validateFile = (file) => {
-  if (!file.name.toLowerCase().endsWith('.xlsx')) { ElMessage.error('仅支持xlsx文件'); return false }
-  if (file.size > 20 * 1024 * 1024) { ElMessage.error('文件大小不能超过20MB'); return false }
+  const name = file.name.toLowerCase()
+  const isExcelFile = name.endsWith('.xlsx') || name.endsWith('.xls')
+  if (!isExcelFile) { ElMessage.error('仅支持xlsx或xls文件'); return false }
+  if (file.size > 100 * 1024 * 1024) { ElMessage.error('文件大小不能超过100MB'); return false }
   return true
 }
 const beforeUpload = (file) => {
@@ -38,8 +40,8 @@ const handleExceed = async (files) => {
 </script>
 
 <template>
-  <el-upload ref="uploadRef" drag accept=".xlsx" :auto-upload="false" :limit="1" :before-upload="beforeUpload" :on-change="handleChange" :on-exceed="handleExceed" :on-remove="() => emit('clear')">
+  <el-upload ref="uploadRef" drag accept=".xlsx,.xls" :auto-upload="false" :limit="1" :before-upload="beforeUpload" :on-change="handleChange" :on-exceed="handleExceed" :on-remove="() => emit('clear')">
     <el-icon class="upload-icon"><UploadFilled /></el-icon><div class="el-upload__text">拖拽 Excel 文件到此处，或 <em>点击上传</em></div>
-    <template #tip><div class="el-upload__tip">仅支持 .xlsx 文件，大小不超过 20MB</div></template>
+    <template #tip><div class="el-upload__tip">支持 .xlsx / .xls 文件，大小不超过 100MB</div></template>
   </el-upload>
 </template>

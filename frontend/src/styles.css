@@ -1,8 +1,9 @@
 :root {
     font-family: Inter, "Microsoft YaHei", sans-serif;
     color: #202b3c;
-    background: #f4f7fb;
+    background: #f3f6fb;
     font-size: 16px;
+    font-synthesis: none;
 }
 
 .el-button,
@@ -23,7 +24,12 @@
 }
 
 body {
-    margin: 0
+    margin: 0;
+    min-width: 320px;
+    background:
+        radial-gradient(circle at 8% -10%, rgba(94, 145, 250, .13), transparent 34%),
+        linear-gradient(180deg, #f8faff 0%, #f3f6fb 38%, #eef3f9 100%);
+    -webkit-font-smoothing: antialiased
 }
 
 .app-shell {
@@ -31,13 +37,18 @@ body {
 }
 
 .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
     height: 64px;
-    background: #fff;
+    background: rgba(255, 255, 255, .9);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 max(24px, calc((100vw - 1200px)/2));
-    box-shadow: 0 1px 2px #15244d0d
+    border-bottom: 1px solid rgba(217, 226, 240, .9);
+    box-shadow: 0 5px 20px rgba(35, 59, 95, .06);
+    backdrop-filter: blur(16px)
 }
 
 .logo {
@@ -59,7 +70,7 @@ body {
 }
 
 .logo span {
-    font-size: 13px;
+    font-size: 18px;
     padding: 6px
 }
 
@@ -73,19 +84,27 @@ body {
 .main-nav.el-menu--horizontal>.el-menu-item {
     height: 64px;
     font-size: 16px;
-    font-weight: 650
+    font-weight: 650;
+    color: #6b7b93;
+    border-bottom-width: 3px
+}
+
+.main-nav.el-menu--horizontal>.el-menu-item:hover,
+.main-nav.el-menu--horizontal>.el-menu-item.is-active {
+    color: #2864e8;
+    background: #f5f8ff
 }
 
 .user-area {
     display: flex;
-    gap: 18px;
+    gap: 20px;
     align-items: center;
     color: #657184;
     white-space: nowrap
 }
 
 .el-main {
-    padding: 32px 20px
+    padding: 34px 20px 56px
 }
 
 .workspace,
@@ -102,7 +121,8 @@ body {
 }
 
 .page-title h1 {
-    font-size: 26px;
+    font-size: 18px;
+    letter-spacing: -.5px;
     margin: 0 0 8px;
     color: #1c2a40
 }
@@ -116,17 +136,56 @@ body {
 
 .section-card {
     margin-bottom: 18px;
-    border: none;
-    border-radius: 12px
+    border: 1px solid #e4eaf3;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 9px 28px rgba(35, 59, 95, .06);
+    overflow: hidden
 }
 
 .section-card .el-card__header {
     padding: 17px 22px;
-    color: #263650
+    color: #263650;
+    border-bottom-color: #edf1f7;
+    background: linear-gradient(180deg, rgba(250, 252, 255, .95), rgba(247, 250, 254, .7))
 }
 
 .section-card .el-card__body {
     padding: 22px
+}
+
+.el-button {
+    border-radius: 9px;
+    font-weight: 600;
+    transition: transform .18s ease, box-shadow .18s ease, background .18s ease
+}
+
+.el-button:not(.is-disabled):hover {
+    transform: translateY(-1px)
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+    border-radius: 9px;
+    box-shadow: 0 0 0 1px #dbe4f0 inset, 0 2px 5px rgba(35, 59, 95, .03);
+    transition: box-shadow .18s ease, background .18s ease
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+    box-shadow: 0 0 0 1px #b9cdf0 inset, 0 3px 8px rgba(35, 59, 95, .05)
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+    box-shadow: 0 0 0 1px #5d8ff2 inset, 0 0 0 3px rgba(93, 143, 242, .12)
+}
+
+.el-form-item__label {
+    color: #52647e;
+    font-weight: 650
 }
 
 .form-grid {
@@ -143,6 +202,26 @@ body {
     font-size: 54px;
     color: #5c86ed;
     margin-bottom: 8px
+}
+
+.el-upload {
+    width: 100%
+}
+
+.el-upload-dragger {
+    width: 100%;
+    min-height: 168px;
+    padding: 28px 20px;
+    border: 1px dashed #b9cdf0;
+    border-radius: 13px;
+    background: linear-gradient(135deg, #f8fbff, #f3f7ff);
+    transition: border-color .18s ease, background .18s ease, transform .18s ease
+}
+
+.el-upload-dragger:hover {
+    border-color: #5d8ff2;
+    background: #eef5ff;
+    transform: translateY(-1px)
 }
 
 .field-actions {
@@ -203,7 +282,9 @@ body {
 .rule-list {
     min-height: 50px;
     border: 1px dashed #bfd0f7;
-    border-radius: 8px;
+    border-radius: 11px;
+    background: #f8fbff;
+    box-shadow: inset 0 1px 4px rgba(35, 59, 95, .03);
     padding: 8px;
     display: flex;
     gap: 8px;
@@ -387,6 +468,71 @@ body {
 
 .workspace {
     padding-bottom: 96px
+}
+
+.generation-history {
+    margin-top: 18px
+}
+
+.generation-history .el-table {
+    --el-table-header-bg-color: #f7f9fd;
+    --el-table-row-hover-bg-color: #f5f9ff;
+    border-radius: 10px;
+    overflow: hidden
+}
+
+.generation-history .el-table th.el-table__cell {
+    color: #667892;
+    font-weight: 700
+}
+
+.history-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    white-space: nowrap
+}
+
+.history-actions .el-button {
+    margin-left: 0 !important;
+    padding: 4px 0
+}
+
+.history-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px
+}
+
+.history-detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 360px;
+    margin-top: 18px;
+    overflow: auto
+}
+
+.history-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border: 1px solid #e1e8f2;
+    border-radius: 9px;
+    background: #f8fbff
+}
+
+.history-detail-item strong {
+    color: #2e4364;
+    line-height: 1.5
+}
+
+.history-detail-item span {
+    color: #8190a5;
+    font-size: 12px
 }
 
 .stations-list {

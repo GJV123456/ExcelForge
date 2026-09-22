@@ -1,0 +1,57 @@
+# =====================
+# dependencies
+# =====================
+node_modules/
+
+# =====================
+# build output
+# =====================
+dist/
+
+# =====================
+# environment
+# =====================
+.env
+.env.*
+!.env.example
+
+# =====================
+# logs
+# =====================
+*.log
+
+# =====================
+# IDE
+# =====================
+.vscode/
+.idea/
+
+# =====================
+# OS
+# =====================
+.DS_Store
+Thumbs.db
+
+# =====================
+# Python backend
+# =====================
+.venv/
+venv/
+env/
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+backend/app/frontend_dist/
+backend/data/*.sqlite3
+backend/data/*.sqlite3-shm
+backend/data/*.sqlite3-wal
+excelforge.sqlite3
+excelforge.sqlite3-shm
+excelforge.sqlite3-wal
+~$*.xls*

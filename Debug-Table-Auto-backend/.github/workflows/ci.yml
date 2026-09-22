@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+          package-manager-cache: false
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  backend-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - run: python -m venv backend/.venv
+      - run: backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
+      - run: backend/.venv/bin/python -m ruff check --no-cache backend/app backend/tests scripts
+      - run: backend/.venv/bin/python -m mypy --config-file backend/pyproject.toml backend/app scripts
+      - run: backend/.venv/bin/python -m pip check
+      - run: backend/.venv/bin/python -m pip_audit -r backend/requirements.txt
+
+  backend-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            root_python: backend/.venv/bin/python
+            test_python: .venv/bin/python
+          - os: windows-latest
+            root_python: backend/.venv/Scripts/python.exe
+            test_python: .venv/Scripts/python.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - run: python -m venv backend/.venv
+      - run: "${{ matrix.root_python }}" -m pip install -r backend/requirements-dev.txt
+      - run: "${{ matrix.test_python }}" -m pytest --cov=app --cov-report=term-missing
+        working-directory: backend
+
+  repository-hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Reject generated or local files
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^|/)(\.venv|node_modules|site-packages|__pycache__|dist|build)(/|$)|\.pyc$|/~\$|(^|/)\.env($|\.)'; then
+            echo "Generated or local files are tracked" >&2
+            exit 1
+          fi
+      - name: Verify approved template
+        shell: bash
+        run: |
+          expected=F265767DD82C5CA1CDFE24BF904E06403C5221E513EED94F6CAF8E37157F5B5D
+          actual=$(sha256sum 'data/raw/联调测试表导入模版.xls' | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')
+          test "$actual" = "$expected"
+          git diff --exit-code -- data/raw
+
+  package-dry-run:
+    needs: [frontend, backend-quality, backend-test, repository-hygiene]
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+          package-manager-cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: python -m venv backend/.venv
+      - run: backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-dev.txt
+      - run: backend/.venv/Scripts/python.exe scripts/build_release.py
+      - run: backend/.venv/Scripts/python.exe scripts/verify_release.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-package-dry-run
+          path: build/release/Debug-Table-Auto-*-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 7

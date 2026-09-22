@@ -73,5 +73,20 @@ const submit = async () => {
 
 <style>
 /* 覆盖全局旧登录页样式，确保 Flex 子元素始终占满可用宽度。 */
-.login-page { align-items: stretch; padding: 0; }
+.login-page { align-items: stretch; padding: 0; background: linear-gradient(135deg, #f5f8ff 0%, #eef4ff 48%, #f8fbff 100%); }
+.login-header { height: 88px; border-bottom-color: #e4eaf3; background: rgba(255, 255, 255, .88); backdrop-filter: blur(14px); }
+.brand-mark { background: linear-gradient(135deg, #2864e8, #5e91fa); border-radius: 13px; box-shadow: 0 8px 18px rgba(40, 100, 232, .2); }
+.brand strong { color: #1d2b44; }
+.header-title { color: #718096; }
+.login-section { height: 540px; background-color: #edf4ff; }
+.login-wrapper { border: 1px solid rgba(219, 230, 246, .9); border-radius: 18px; overflow: hidden; box-shadow: 0 18px 50px rgba(35, 59, 95, .16); }
+.login-wrapper nav { background: linear-gradient(180deg, #fbfdff, #f7faff); }
+.login-wrapper nav span { color: #2864e8; }
+.account-box :deep(.el-input__wrapper) { border-radius: 10px; background: #fbfdff; box-shadow: 0 0 0 1px #dbe4f0 inset; }
+.account-box :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 1px #5d8ff2 inset, 0 0 0 3px rgba(93, 143, 242, .12); }
+.account-box :deep(.el-input__prefix) { color: #6b8fd5; }
+.account-box .submit-button { border: 0; border-radius: 10px; background: linear-gradient(135deg, #2864e8, #4f86ff); box-shadow: 0 9px 22px rgba(40, 100, 232, .24); }
+.account-box .submit-button:hover { background: linear-gradient(135deg, #1f57d6, #3f78f7); }
+.login-footer { color: #8190a5; }
+.login-footer a { color: #8190a5; }
 </style>

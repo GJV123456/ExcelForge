@@ -159,6 +159,12 @@ const rules = [
   },
   {
     equipmentTypes: ['控制模块'],
+    subtype: '电源',
+    keywords: ['电源'],
+    fields: ['远程复位']
+  },
+  {
+    equipmentTypes: ['控制模块'],
     subtype: 'EPS',
     keywords: ['EPS'],
     fields: ['启动控制', '状态反馈']
@@ -268,17 +274,27 @@ const findRule = ({ equipmentType, equipmentChinese, equipmentCode = '', signalD
 }
 
 export function deriveEquipmentClassification(input) {
+  const type = normalize(input.equipmentType)
+  const code = normalizeCase(input.equipmentCode)
   const equipmentText = normalize([input.equipmentChinese, input.equipmentCode].filter(Boolean).join(' '))
   const signalText = normalize(input.signalDescription)
   const matched = findRule(input)
   const statusFromEquipmentChinese = matched ? findMatchedField(matched, equipmentText, normalizeCase(equipmentText)) : ''
   const statusFromSignalDescription = matched && !statusFromEquipmentChinese ? findMatchedField(matched, signalText, normalizeCase(signalText)) : ''
   const equipmentStatus = statusFromEquipmentChinese || statusFromSignalDescription
+  // 老数据中的防火阀规则有时只在设备编码里带 FF2，中文内容没有明确的
+  // “动作状态/关控制命令”字段。此时仍保留编码对应的状态，供左侧规则列表展示。
+  const fallbackStatus = !equipmentStatus
+    && type === '防火阀'
+    && matched?.subtype === '电动防火阀'
+    && code.includes('FF2')
+    ? 'FF2'
+    : ''
   const intervalName = matched?.subtype === '感温光纤' ? extractIntervalName(input.equipmentChinese) : ''
 
   const result = {
     equipmentSubtype: matched?.subtype || '',
-    equipmentStatus
+    equipmentStatus: equipmentStatus || fallbackStatus
   }
   if (matched?.subtype === '感温光纤') result.intervalName = intervalName
   return result
