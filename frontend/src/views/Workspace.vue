@@ -1,6 +1,6 @@
 <script setup>
 import { DocumentAdd, Download, Refresh, View } from '@element-plus/icons-vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import LocationForm from '../components/LocationForm.vue'
 import UploadExcel from '../components/UploadExcel.vue'
@@ -14,6 +14,7 @@ import { downloadGeneration, getGeneration, getGenerations, processExcelV2 } fro
 import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
 import { buildTestLocation, validateFormalLocation } from '../utils/formalLocation'
+import { integrationProjects } from '../data/integrations'
 
 const excel = useExcelStore()
 const loading = ref(false)
@@ -22,6 +23,14 @@ const history = ref([])
 const historyDetailLoading = ref(false)
 const historyDetailVisible = ref(false)
 const historyDetail = ref(null)
+const integrationOptions = integrationProjects
+const selectedIntegration = computed({
+  get: () => excel.selectedIntegration,
+  set: (value) => excel.setIntegration(value)
+})
+const selectedProject = computed(() => integrationOptions.find((item) => item.code === selectedIntegration.value))
+const isT19Selected = computed(() => selectedIntegration.value === 'T19')
+const isIntegrationSelected = computed(() => Boolean(selectedProject.value))
 const location = reactive({ type: '', direction: '', startStation: '', endStation: '' })
 const locationValue = computed({ get: () => location, set: (value) => Object.assign(location, value) })
 const submitLabel = computed(() => loading.value ? '正在生成正式文件...' : '生成正式文件')
@@ -67,6 +76,7 @@ const clear = () => {
 }
 
 const validate = () => {
+  if (!selectedProject.value) return '请先选择联调项目'
   const locationMessage = validateFormalLocation(location)
   if (locationMessage) return locationMessage
   if (!excel.rows.length) return '请先上传并解析 Excel 文件'
@@ -81,9 +91,13 @@ const responseList = (response) => {
 }
 
 const loadHistory = async () => {
+  if (!isT19Selected.value) {
+    history.value = []
+    return
+  }
   historyLoading.value = true
   try {
-    history.value = responseList(await getGenerations({ limit: 20 }))
+    history.value = responseList(await getGenerations({ limit: 20, integrationCode: selectedIntegration.value }))
   } catch (error) {
     ElMessage.error(await getApiErrorMessage(error))
   } finally {
@@ -123,10 +137,11 @@ const submit = async () => {
   if (loading.value) return
   const message = validate()
   if (message) return ElMessage.warning(message)
-  const testContents = baseTestContents.value
+  // intervalName is a display-only classification detail, not part of the v2 API contract.
+  const testContents = baseTestContents.value.map(({ intervalName, ...content }) => content)
   loading.value = true
   try {
-    const response = await processExcelV2({ testLocation: buildTestLocation(location), testContents })
+    const response = await processExcelV2({ integrationCode: selectedIntegration.value, testLocation: buildTestLocation(location), testContents })
     if (!response.data || response.data.size === 0) throw Object.assign(new Error('empty file'), { publicMessage: '文件生成失败' })
     downloadResponseBlob(response)
     await loadHistory()
@@ -138,18 +153,41 @@ const submit = async () => {
   }
 }
 
-onMounted(loadHistory)
+watch(selectedIntegration, (value) => {
+  if (value === 'T19') loadHistory()
+  else history.value = []
+})
 </script>
 
 <template>
   <div class="workspace">
-    <div class="page-title"><div><h1>测试内容生成工作台</h1><p>上传 Excel，配置规则，生成系统可导入的正式文件。</p></div></div>
-    <el-card class="section-card"><template #header><b>1. 测试地点配置</b></template><LocationForm v-model="locationValue" /></el-card>
-    <el-card class="section-card"><template #header><b>2. Excel 上传与解析</b></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /></el-card>
-    <el-card v-if="excel.excelType === 'B'" class="section-card"><template #header><b>3. 测试内容生成规则</b></template><RuleBuilder v-model="excel.rules" :available-fields="excel.headers" /></el-card>
-    <el-card v-if="excel.excelType" class="section-card"><template #header><b>{{ excel.excelType === 'B' ? '实时预览（前 5 条）' : 'Excel 数据预览（前 5 条）' }}</b></template><ExcelPreview :rows="excel.rows" :excel-type="excel.excelType" :preview="preview" /></el-card>
-    <div v-if="excel.excelType" class="submit-panel"><el-button class="submit-button" type="primary" size="large" :icon="DocumentAdd" :loading="loading" :disabled="loading" @click="submit">{{ submitLabel }}</el-button></div>
-    <el-card class="section-card generation-history">
+    <div class="page-title">
+      <div><h1>测试内容生成工作台</h1><p>上传 Excel，配置规则，生成系统可导入的正式文件。</p></div>
+      <div class="integration-picker">
+        <span class="integration-picker-label">联调项目</span>
+        <el-select v-model="selectedIntegration" class="integration-select" clearable placeholder="请选择联调项目" aria-label="选择联调项目">
+        <el-option v-for="item in integrationOptions" :key="item.code" :label="item.name" :value="item.code" />
+        </el-select>
+        <span class="integration-picker-hint">{{ selectedProject?.description || '生成文档属于具体联调项目的子系统' }}</span>
+      </div>
+    </div>
+    <el-collapse-transition>
+      <div v-if="isIntegrationSelected" class="integration-content">
+        <div class="integration-banner"><strong>{{ selectedProject?.name }}</strong><span>当前联调项目</span></div>
+        <template v-if="isT19Selected">
+        <el-card class="section-card"><template #header><b>1. 测试地点配置</b></template><LocationForm v-model="locationValue" /></el-card>
+        <el-card class="section-card"><template #header><b>2. Excel 上传与解析</b></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /></el-card>
+        <el-card v-if="excel.excelType === 'B'" class="section-card"><template #header><b>3. 测试内容生成规则</b></template><RuleBuilder v-model="excel.rules" :available-fields="excel.headers" /></el-card>
+        <el-card v-if="excel.excelType" class="section-card"><template #header><b>{{ excel.excelType === 'B' ? '实时预览（前 5 条）' : 'Excel 数据预览（前 5 条）' }}</b></template><ExcelPreview :rows="excel.rows" :excel-type="excel.excelType" :preview="preview" /></el-card>
+        <div v-if="excel.excelType" class="submit-panel"><el-button class="submit-button" type="primary" size="large" :icon="DocumentAdd" :loading="loading" :disabled="loading" @click="submit">{{ submitLabel }}</el-button></div>
+        </template>
+        <div v-else class="integration-placeholder">
+          <strong>{{ selectedProject?.name }} 子系统</strong>
+          <p>{{ selectedProject?.description || '该联调项目的专属工作区正在配置中。' }}</p>
+        </div>
+      </div>
+    </el-collapse-transition>
+    <el-card v-if="isT19Selected" class="section-card generation-history">
       <template #header>
         <div class="history-heading"><b>近期生成文件</b><el-button text type="primary" :icon="Refresh" :loading="historyLoading" @click="loadHistory">刷新记录</el-button></div>
       </template>

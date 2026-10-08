@@ -19,3 +19,17 @@ class LoginRequest(ApiModel):
     password: CredentialText
     agree: StrictBool
     remember: StrictBool = Field(description="Frontend preference; not persisted by backend")
+
+
+class RegisterRequest(ApiModel):
+    username: CredentialText
+    password: CredentialText
+    confirm_password: CredentialText = Field(alias="confirmPassword")
+    display_name: CredentialText = Field(alias="displayName")
+    agree: StrictBool
+
+
+class ChangePasswordRequest(ApiModel):
+    current_password: CredentialText = Field(alias="currentPassword")
+    new_password: CredentialText = Field(alias="newPassword")
+    confirm_password: CredentialText = Field(alias="confirmPassword")

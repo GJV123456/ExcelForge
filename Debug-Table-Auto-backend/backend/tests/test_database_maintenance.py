@@ -6,13 +6,14 @@ from pathlib import Path
 import pytest
 
 from app.db.maintenance import backup_database, check_database, initialize_database
+from app.db.catalog import SCHEMA_VERSION
 
 
 def test_database_init_check_and_consistent_backup(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     backup_path = tmp_path / "backups" / "catalog.sqlite3"
 
-    assert initialize_database(database_path) == 5
+    assert initialize_database(database_path) == SCHEMA_VERSION
     with sqlite3.connect(database_path) as connection:
         connection.execute(
             "INSERT INTO equipment_types(code, name) VALUES (?, ?)",
@@ -20,7 +21,7 @@ def test_database_init_check_and_consistent_backup(tmp_path: Path) -> None:
         )
 
     report = check_database(database_path)
-    assert report.schema_version == 5
+    assert report.schema_version == SCHEMA_VERSION
     assert report.integrity == "ok"
     assert report.foreign_key_errors == 0
     assert report.is_healthy

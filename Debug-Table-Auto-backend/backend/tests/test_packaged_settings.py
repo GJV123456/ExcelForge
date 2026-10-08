@@ -3,12 +3,12 @@ from __future__ import annotations
 from app.config import Settings, apply_packaged_defaults
 
 
-def test_packaged_app_supplies_initial_admin_login() -> None:
+def test_packaged_app_uses_database_accounts_without_initial_login() -> None:
     settings = apply_packaged_defaults(Settings(), is_frozen=True)
 
-    assert settings.auth_username == "admin"
-    assert settings.auth_password == "123456"
-    assert settings.auth_display_name == "管理员"
+    assert settings.auth_username is None
+    assert settings.auth_password is None
+    assert settings.auth_display_name is None
 
 
 def test_source_app_does_not_supply_initial_admin_login() -> None:

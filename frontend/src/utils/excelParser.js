@@ -40,13 +40,22 @@ export async function parseExcel(file) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
   if (!sheet) throw createHeaderError([])
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-  const headers = (matrix[0] || []).map(normalize).filter(Boolean)
+  const headerEntries = (matrix[0] || [])
+    .map((value, index) => ({ name: normalize(value), index }))
+    .filter(({ name }) => name)
+  const headers = headerEntries.map(({ name }) => name)
   const excelType = detectExcelType(headers)
   if (!excelType) throw createHeaderError(headers)
-  const rows = matrix.slice(1).filter((row) => row.some((cell) => normalize(cell))).map((row, index) => ({
-    sortIndex: index + 1,
-    ...Object.fromEntries(headers.map((header, headerIndex) => [header, normalize(row[headerIndex])]))
-  }))
+  const businessHeaders = excelType === 'A' ? typeAHeaders : typeBHeaders
+  const rows = matrix.slice(1)
+    .filter((row) => businessHeaders.some((header) => {
+      const column = headerEntries.find(({ name }) => name === header)?.index
+      return column !== undefined && normalize(row[column])
+    }))
+    .map((row, index) => ({
+      sortIndex: index + 1,
+      ...Object.fromEntries(headerEntries.map(({ name, index: column }) => [name, normalize(row[column])]))
+    }))
   return { headers, rows, excelType }
 }
 

@@ -121,34 +121,53 @@ X-Request-ID
 
 ## 4. 认证接口
 
-### 4.1 用户登录
+### 4.1 首次创建账号
+
+空数据库首次使用时先调用注册接口。注册成功后会立即返回登录会话；数据库已有账号时注册接口关闭。
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "operator",
+  "password": "secret123",
+  "confirmPassword": "secret123",
+  "displayName": "操作员",
+  "agree": true
+}
+```
+
+### 4.2 用户登录
 
 ```http
 POST /api/auth/login
 Content-Type: application/json
 ```
 
-### 4.2 请求体
+### 4.3 请求体
 
 ```json
 {
-  "username": "admin",
-  "password": "123456",
+  "username": "operator",
+  "password": "secret123",
   "agree": true,
   "remember": true
 }
 ```
 
-### 4.3 请求字段
+### 4.4 请求字段
 
 | 字段 | 类型 | 是否必填 | 说明 |
 |---|---|---:|---|
 | `username` | string | 是 | 用户名 |
 | `password` | string | 是 | 密码 |
 | `agree` | boolean | 是 | 是否同意隐私条款和服务条款。当前前端默认传 `true` |
-| `remember` | boolean | 是 | 是否记住密码。该字段主要由前端使用，后端可以接收但不必保存密码 |
+| `remember` | boolean | 是 | 是否延长数据库会话有效期；后端不会保存明文密码 |
 
-### 4.4 成功响应
+### 4.5 成功响应
 
 HTTP 状态码：
 
@@ -163,8 +182,8 @@ HTTP 状态码：
   "data": {
     "token": "eyJhbGciOi...",
     "userInfo": {
-      "username": "admin",
-      "name": "管理员"
+      "username": "operator",
+      "name": "操作员"
     }
   }
 }
@@ -185,8 +204,8 @@ HTTP 状态码：
 {
   "token": "eyJhbGciOi...",
   "userInfo": {
-    "username": "admin",
-    "name": "管理员"
+    "username": "operator",
+    "name": "操作员"
   }
 }
 ```
@@ -197,7 +216,7 @@ HTTP 状态码：
 localStorage.excelforge_user
 ```
 
-### 4.5 登录失败响应
+### 4.6 登录失败响应
 
 建议返回：
 
@@ -217,33 +236,14 @@ localStorage.excelforge_user
 前端登录页会优先读取：
 
 ```text
-response.data.message
+response.data.detail
 ```
 
-因此登录错误响应中建议提供 `message` 字段。
+兼容旧后端时也可读取 `response.data.message`。
 
-### 4.6 前端模拟登录注意事项
+### 4.7 密码与会话
 
-开发环境下，前端默认使用模拟登录，不会请求后端：
-
-```env
-VITE_ENABLE_MOCK_AUTH=true
-```
-
-模拟账号：
-
-```text
-用户名：admin
-密码：123456
-```
-
-要测试真实后端登录，必须设置：
-
-```env
-VITE_ENABLE_MOCK_AUTH=false
-```
-
-修改 `.env.local` 后需要重新启动 Vite。
+后端只在 SQLite 中保存 PBKDF2-SHA256 密码摘要，不保存明文密码。修改密码需要当前会话和旧密码，修改成功后会吊销该用户的旧会话。退出登录会吊销当前会话。
 
 ## 5. Axios 请求公共规则
 
@@ -1065,7 +1065,7 @@ GET /api/generations/{generationId}/download
 
 前后端联调时，如果浏览器 F12 的 Network 中没有请求，先检查：
 
-1. 前端是否设置了 `VITE_ENABLE_MOCK_AUTH=false`
+1. 登录页是否已创建首个账号并收到有效 token
 2. 当前按钮是否调用 `/api/v2/excel/process`
 3. 后端是否运行在 `127.0.0.1:8000`
 4. Vite 代理目标是否正确

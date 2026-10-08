@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
@@ -76,12 +76,5 @@ class Settings:
 
 
 def apply_packaged_defaults(settings: Settings, *, is_frozen: bool) -> Settings:
-    """Supply local desktop bootstrap credentials only for packaged applications."""
-    if not is_frozen or settings.auth_username is not None or settings.auth_password is not None:
-        return settings
-    return replace(
-        settings,
-        auth_username="admin",
-        auth_password="123456",
-        auth_display_name=settings.auth_display_name or "管理员",
-    )
+    """Keep packaged builds database-first; explicit env credentials may migrate once."""
+    return settings

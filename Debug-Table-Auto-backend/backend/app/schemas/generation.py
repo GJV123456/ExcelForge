@@ -53,6 +53,7 @@ class GenerationCounts(TypedDict):
 
 class GenerationSummary(TypedDict):
     id: str
+    integrationCode: str
     requestId: str
     generatedAt: str
     filename: str

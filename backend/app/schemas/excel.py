@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -35,3 +35,6 @@ class ExcelProcessRequest(ApiModel):
     testLocation: TestLocation
     testContents: list[TestContent]
 
+
+class ExcelProcessV2Request(ExcelProcessRequest):
+    integrationCode: Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=32)] = "T19"

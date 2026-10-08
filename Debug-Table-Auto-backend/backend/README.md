@@ -40,14 +40,17 @@ Configuration uses environment variables:
 - `EXCELFORGE_MOCK_DELAY_SECONDS=0..10` (default: `0`; use `2` for Loading tests)
 - `EXCELFORGE_TEMPLATE_PATH=<path>` (optional explicit template override)
 - `EXCELFORGE_DATABASE_PATH=<path>` (optional SQLite database override)
-- `EXCELFORGE_AUTH_USERNAME=<username>` (required in source/server mode; packaged default: `admin`)
-- `EXCELFORGE_AUTH_PASSWORD=<password>` (required in source/server mode; packaged default: `123456`)
-- `EXCELFORGE_AUTH_DISPLAY_NAME=<name>` (default: same as username)
+- `EXCELFORGE_AUTH_USERNAME=<username>` (optional one-time legacy account migration)
+- `EXCELFORGE_AUTH_PASSWORD=<password>` (optional one-time legacy account migration)
+- `EXCELFORGE_AUTH_DISPLAY_NAME=<name>` (optional migration display name)
 
 Endpoints currently available:
 
 - `GET /api/health`
+- `POST /api/auth/register` (first-account initialization)
 - `POST /api/auth/login`
+- `POST /api/auth/change-password`
+- `POST /api/auth/logout`
 - `GET /api/catalog/equipment-types`
 - `GET /api/catalog/equipment-hierarchy` (parent types with child subtypes)
 - `GET /api/catalog/equipment-types/{id}/subtypes`
@@ -344,30 +347,27 @@ To maintain another database, put the global option before the command:
 The separately installed `sqlite3` CLI can inspect the same file, but the app
 does not require it; Python's built-in SQLite driver owns runtime access.
 
-### Login compatibility contract
+### Database login contract
 
-`POST /api/auth/login` accepts the existing frontend body
-`username`, `password`, `agree` and `remember`. `agree` must be true;
-`remember` is accepted as a frontend preference but is not persisted by the
-backend. On success the backend returns the currently supported nested shape:
+`POST /api/auth/register` creates the first account and returns a session. Once
+initialized, registration is closed. `POST /api/auth/login` accepts
+`username`, `password`, `agree` and `remember`; `remember` controls the database
+session lifetime. `POST /api/auth/change-password` changes the current user's
+password, and `POST /api/auth/logout` revokes the current session.
 
 ```json
 {
   "data": {
     "token": "opaque-session-token",
-    "userInfo": {"username": "admin", "name": "管理员"}
+    "userInfo": {"username": "operator", "name": "操作员"}
   }
 }
 ```
 
-Source/server mode has no built-in credentials and requires environment
-variables. Packaged desktop builds bootstrap the local login as `admin` / `123456`
-when neither username nor password is configured. Operators should override both
-values before distributing the package beyond a trusted local machine. Supplying
-only one value intentionally disables the bootstrap pair and leaves login
-unconfigured. The token is an API-compatibility token only in this local
-single-user phase; existing Excel and catalog endpoints do not yet enforce
-authorization.
+The database stores only a password hash, never the plaintext password. Explicit
+legacy environment credentials, when present, are imported once into an empty
+database and are not checked directly on subsequent logins. Sessions are stored
+as SHA-256 token hashes with an expiration time.
 
 ## Local Windows release
 

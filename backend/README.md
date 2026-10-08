@@ -10,8 +10,12 @@ python -m uvicorn app.main:app --reload --port 8000
 
 ## API
 
+- `POST /api/auth/register`（首次创建账号）
 - `POST /api/auth/login`
-- `POST /api/excel/process`
+- `POST /api/auth/change-password`
+- `POST /api/auth/logout`
+- `POST /api/excel/process`（兼容旧版）
+- `POST /api/v2/excel/process`（当前工作台，要求 `integrationCode: "T19"`）
 
 `/api/excel/process` accepts:
 
@@ -38,4 +42,3 @@ python -m uvicorn app.main:app --reload --port 8000
     }
   ]
 }
-

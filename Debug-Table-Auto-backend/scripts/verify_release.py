@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from http.client import HTTPMessage
 from pathlib import Path
@@ -17,10 +18,20 @@ import xlrd
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RELEASE = ROOT / "build" / "release" / "DebugTableAuto"
 FIXTURE = ROOT / "backend" / "tests" / "fixtures" / "excel_process_v2_request.json"
+REGISTER_PAYLOAD = json.dumps(
+    {
+        "username": "release-check",
+        "password": "release-check-123",
+        "confirmPassword": "release-check-123",
+        "displayName": "发布验证",
+        "agree": True,
+    },
+    ensure_ascii=False,
+).encode("utf-8")
 LOGIN_PAYLOAD = json.dumps(
     {
-        "username": "admin",
-        "password": "123456",
+        "username": "release-check",
+        "password": "release-check-123",
         "agree": True,
         "remember": False,
     },
@@ -51,6 +62,10 @@ def main() -> None:
         "EXCELFORGE_AUTH_DISPLAY_NAME",
     ):
         environment.pop(variable, None)
+    database_fd, database_name = tempfile.mkstemp(prefix="excelforge-release-", suffix=".sqlite3")
+    os.close(database_fd)
+    Path(database_name).unlink(missing_ok=True)
+    environment["EXCELFORGE_DATABASE_PATH"] = database_name
     process = subprocess.Popen(
         [
             str(executable),
@@ -79,6 +94,10 @@ def main() -> None:
             raise SystemExit("Release did not become healthy")
 
         page_status, page, _ = _request("http://127.0.0.1:8030/")
+        register_status, register_body, _ = _request(
+            "http://127.0.0.1:8030/api/auth/register",
+            REGISTER_PAYLOAD,
+        )
         login_status, login_body, _ = _request(
             "http://127.0.0.1:8030/api/auth/login",
             LOGIN_PAYLOAD,
@@ -95,8 +114,16 @@ def main() -> None:
         )
         generation = json.loads(generation_body)["data"]
         assert page_status == 200 and b'<div id="app"></div>' in page
+        assert register_status == 200
+        assert json.loads(register_body)["data"]["userInfo"] == {
+            "username": "release-check",
+            "name": "发布验证",
+        }
         assert login_status == 200
-        assert login_data["userInfo"] == {"username": "admin", "name": "管理员"}
+        assert login_data["userInfo"] == {
+            "username": "release-check",
+            "name": "发布验证",
+        }
         assert len(login_data["token"]) >= 32
         assert status == 200 and headers.get_content_type() == "application/vnd.ms-excel"
         assert generation_status == 200
@@ -127,6 +154,7 @@ def main() -> None:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             process.kill()
+        Path(database_name).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

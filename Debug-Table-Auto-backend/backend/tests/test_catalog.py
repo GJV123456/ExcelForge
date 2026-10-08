@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.db.catalog import SCHEMA_VERSION
 from app.main import create_app
 
 
@@ -109,7 +110,7 @@ def test_catalog_first_request_creates_empty_versioned_schema(tmp_path: Path) ->
         "generation_result_outputs",
         "generation_result_disciplines",
     }.issubset(table_names)
-    assert version == 5
+    assert version == SCHEMA_VERSION
     assert columns == {
         "equipment_types": {
             "id",
@@ -171,6 +172,7 @@ def test_catalog_first_request_creates_empty_versioned_schema(tmp_path: Path) ->
         },
         "generation_runs": {
             "id",
+            "integration_code",
             "request_id",
             "generated_at",
             "filename",
@@ -241,7 +243,7 @@ def test_catalog_upgrades_existing_v1_database_without_losing_rules(tmp_path: Pa
     with sqlite3.connect(database_path) as connection:
         version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
         preserved = connection.execute("SELECT value FROM preserved_rule").fetchone()[0]
-    assert version == 5
+    assert version == SCHEMA_VERSION
     assert preserved == "保留"
 
 

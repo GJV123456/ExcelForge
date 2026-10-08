@@ -40,7 +40,7 @@ npm.cmd run dev
 VITE_API_PROXY_TARGET=http://127.0.0.1:8000
 ```
 
-开发环境默认保留模拟登录，用户名 `admin`、密码 `123456`。Excel 处理不再
+登录账号由后端 SQLite 管理，首次使用时在登录页创建首个账号。Excel 处理不再
 使用浏览器本地 Mock；Mock/Formal 模式由后端统一控制。
 
 正式生成前需在启动后端前设置：

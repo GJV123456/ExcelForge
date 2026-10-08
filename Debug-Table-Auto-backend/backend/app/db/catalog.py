@@ -28,7 +28,7 @@ from app.schemas.catalog import (
     TestContentWriteRequest,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 _BUILTIN_PARENT_STATUSES: dict[str, list[str]] = {
     "排烟机": ["运行状态", "手自动切换状态", "开启控制命令"],
@@ -161,6 +161,7 @@ _SCHEMA_V2_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS generation_runs (
         id TEXT PRIMARY KEY,
+        integration_code TEXT NOT NULL DEFAULT 'T19',
         request_id TEXT NOT NULL,
         generated_at TEXT NOT NULL,
         filename TEXT NOT NULL,
@@ -275,6 +276,38 @@ _SCHEMA_V4_STATEMENTS = (
 
 _SCHEMA_V5_STATEMENTS = (
     "ALTER TABLE generation_runs ADD COLUMN output_blob BLOB",
+)
+
+_SCHEMA_V6_STATEMENTS = (
+    "ALTER TABLE generation_runs ADD COLUMN integration_code TEXT NOT NULL DEFAULT 'T19'",
+    "CREATE INDEX IF NOT EXISTS ix_generation_runs_integration_code ON generation_runs(integration_code)",
+)
+
+_SCHEMA_V7_STATEMENTS = (
+    """
+    CREATE TABLE IF NOT EXISTS auth_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        password_hash TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        is_enabled INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0, 1)),
+        last_login_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_auth_sessions_user_id ON auth_sessions(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_auth_sessions_expires_at ON auth_sessions(expires_at)",
 )
 
 
@@ -517,6 +550,27 @@ class CatalogRepository:
                         connection.execute(_SCHEMA_V5_STATEMENTS[0])
                 connection.execute("INSERT INTO schema_migrations(version) VALUES (5)")
                 current_version = 5
+            if current_version < 6:
+                table_exists = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'generation_runs'"
+                ).fetchone()
+                if table_exists:
+                    generation_columns = {
+                        row[1]
+                        for row in connection.execute(
+                            "PRAGMA table_info(generation_runs)"
+                        ).fetchall()
+                    }
+                    if "integration_code" not in generation_columns:
+                        connection.execute(_SCHEMA_V6_STATEMENTS[0])
+                    connection.execute(_SCHEMA_V6_STATEMENTS[1])
+                connection.execute("INSERT INTO schema_migrations(version) VALUES (6)")
+                current_version = 6
+            if current_version < 7:
+                for statement in _SCHEMA_V7_STATEMENTS:
+                    connection.execute(statement)
+                connection.execute("INSERT INTO schema_migrations(version) VALUES (7)")
+                current_version = 7
             selector_columns = {
                 row[1]
                 for row in connection.execute(

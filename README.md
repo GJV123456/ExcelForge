@@ -65,30 +65,26 @@ Local: http://localhost:5173/
 
 打开这个地址即可访问前端页面。
 
-## 5. 默认登录
+## 5. 账号初始化
 
-开发环境默认开启模拟登录，可以使用：
-
-```text
-用户名：admin
-密码：123456
-```
+首次启动完整后端时，登录页可以创建首个账号。账号、密码摘要和登录会话保存到
+后端 SQLite 数据库，系统不再使用内置的 `admin/123456` 登录账号。
 
 ## 6. 后端接口联调
 
-如果只是看前端页面和模拟下载，不需要额外配置。
+如果只是看前端页面和模拟下载，不需要额外配置。当前完整工作台使用
+`Debug-Table-Auto-backend/backend` 中的 FastAPI 服务，该服务包含目录配置、正式
+生成和生成历史接口；根目录 `backend/` 仅保留旧版兼容接口。
 
 如果要真实请求后端接口，在项目根目录新建 `.env.local`：
 
 ```env
-VITE_ENABLE_MOCK_AUTH=true
 VITE_ENABLE_MOCK_PROCESS=false
 VITE_API_BASE_URL=http://localhost:8080
 ```
 
 其中：
 
-- `VITE_ENABLE_MOCK_AUTH=true`：登录仍使用前端模拟账号。
 - `VITE_ENABLE_MOCK_PROCESS=false`：Excel 处理请求会发给真实后端。
 - `VITE_API_BASE_URL=http://localhost:8080`：后端服务地址，按实际端口修改。
 
@@ -107,6 +103,15 @@ Excel 处理接口：
 ```http
 POST /api/excel/process
 ```
+
+当前正式工作台调用：
+
+```http
+POST /api/v2/excel/process
+```
+
+工作台属于 T19 联调子系统。选择 T19 后才会展开测试地点、Excel 处理、规则、预览、
+生成和历史记录区域；请求会带 `integrationCode: "T19"`。
 
 提交 Excel 处理时，前端会发送类似数据：
 
@@ -156,4 +161,3 @@ POST /api/excel/process
 ## 9. 注意事项
 
 - `node_modules/` 不会提交到 Git，需要自己执行 `npm install`。
-

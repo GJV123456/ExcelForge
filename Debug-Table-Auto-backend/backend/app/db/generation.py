@@ -66,15 +66,16 @@ class GenerationRepository:
             connection.execute(
                 """
                 INSERT INTO generation_runs(
-                    id, request_id, generated_at, filename, output_sha256,
+                    id, integration_code, request_id, generated_at, filename, output_sha256,
                     output_blob,
                     location_type, direction, start_station, end_station,
                     test_content_count, operation_step_count, result_output_count,
                     discipline_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     generation_id,
+                    request.integration_code,
                     request_id,
                     generated_at.isoformat(),
                     filename,
@@ -162,17 +163,30 @@ class GenerationRepository:
                         )
         return generation_id
 
-    def list_generations(self, *, limit: int, offset: int) -> list[GenerationSummary]:
+    def list_generations(
+        self, *, limit: int, offset: int, integration_code: str | None = None
+    ) -> list[GenerationSummary]:
         self.database.ensure_schema()
         with closing(self.database._connect()) as connection, connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM generation_runs
-                ORDER BY generated_at DESC, created_at DESC, id DESC
-                LIMIT ? OFFSET ?
-                """,
-                (limit, offset),
-            ).fetchall()
+            if integration_code:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM generation_runs
+                    WHERE integration_code = ?
+                    ORDER BY generated_at DESC, created_at DESC, id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (integration_code, limit, offset),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM generation_runs
+                    ORDER BY generated_at DESC, created_at DESC, id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (limit, offset),
+                ).fetchall()
         return [self._summary(row) for row in rows]
 
     def get_generation(self, generation_id: str) -> GenerationDetail | None:
@@ -291,6 +305,7 @@ class GenerationRepository:
     def _summary(row: sqlite3.Row) -> GenerationSummary:
         return GenerationSummary(
             id=str(row["id"]),
+            integrationCode=str(row["integration_code"]),
             requestId=str(row["request_id"]),
             generatedAt=str(row["generated_at"]),
             filename=str(row["filename"]),

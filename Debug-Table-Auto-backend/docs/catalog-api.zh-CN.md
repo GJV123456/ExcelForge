@@ -68,9 +68,30 @@ X-Request-ID: <请求标识>
 
 前端记录错误日志时应同时记录该值，便于定位后端日志。
 
-## 3. 登录接口
+## 3. 账号与登录接口
 
-### 3.1 请求
+空数据库首次使用时先创建首个账号，注册成功会返回会话；已有账号后注册接口关闭。
+
+### 3.1 首次创建账号
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "operator",
+  "password": "secret123",
+  "confirmPassword": "secret123",
+  "displayName": "操作员",
+  "agree": true
+}
+```
+
+### 3.2 登录
+
+### 3.3 请求
 
 ```http
 POST /api/auth/login
@@ -81,8 +102,8 @@ Content-Type: application/json
 
 ```json
 {
-  "username": "admin",
-  "password": "123456",
+  "username": "operator",
+  "password": "secret123",
   "agree": true,
   "remember": false
 }
@@ -93,9 +114,9 @@ Content-Type: application/json
 | `username` | string | 是 | 用户名，去除首尾空白后不能为空 |
 | `password` | string | 是 | 密码，去除首尾空白后不能为空 |
 | `agree` | boolean | 是 | 必须为 `true` |
-| `remember` | boolean | 是 | 兼容现有前端；后端当前不持久化该偏好 |
+| `remember` | boolean | 是 | 控制数据库会话有效期，不保存明文密码 |
 
-### 3.2 成功响应
+### 3.4 成功响应
 
 ```http
 HTTP/1.1 200 OK
@@ -107,8 +128,8 @@ Content-Type: application/json
   "data": {
     "token": "后端生成的不透明 token",
     "userInfo": {
-      "username": "admin",
-      "name": "管理员"
+      "username": "operator",
+      "name": "操作员"
     }
   }
 }
@@ -128,29 +149,16 @@ const token = response.data.token
 const userInfo = response.data.userInfo
 ```
 
-### 3.3 登录错误
+### 3.5 登录错误
 
 | HTTP 状态 | `code` | 含义 |
 | ---: | --- | --- |
 | 400 | `AUTH_AGREEMENT_REQUIRED` | 未同意条款 |
 | 401 | `AUTH_INVALID_CREDENTIALS` | 用户名或密码错误 |
 | 422 | `REQUEST_VALIDATION_ERROR` | 字段缺失或类型错误 |
-| 503 | `AUTH_NOT_CONFIGURED` | 后端没有配置登录凭据 |
+| 409 | `AUTH_REGISTRATION_CLOSED` | 数据库已有首个账号，不能重复初始化 |
 
-源码或服务器启动模式没有内置账号，部署者需要配置：
-
-```text
-EXCELFORGE_AUTH_USERNAME
-EXCELFORGE_AUTH_PASSWORD
-EXCELFORGE_AUTH_DISPLAY_NAME
-```
-
-PyInstaller 打包的本地桌面版在用户名和密码均未配置时，提供初始账号
-`admin / 123456`，以保证用户双击 EXE 后可以登录。若通过环境变量覆盖，必须同时配置用户名和
-密码；只配置其中一项会使登录保持未配置状态。将桌面包交给非受信任环境前应覆盖初始密码。
-
-当前 token 只用于兼容现有前端登录流程，目录接口和 Excel 接口尚未强制校验
-`Authorization`。前端可以继续保存和发送 token，但不能将此视为已完成的服务端权限控制。
+密码使用 PBKDF2-SHA256 摘要存储在 SQLite 中；修改密码会吊销该用户已有会话，退出登录会吊销当前会话。
 
 ## 4. 获取设备类型
 

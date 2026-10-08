@@ -24,8 +24,11 @@ def list_generations(
     request: Request,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    integration_code: Annotated[str | None, Query(alias="integrationCode", min_length=1, max_length=32)] = None,
 ) -> GenerationListResponse:
-    data = _repository(request).list_generations(limit=limit, offset=offset)
+    data = _repository(request).list_generations(
+        limit=limit, offset=offset, integration_code=integration_code
+    )
     return {"data": data, "meta": {"count": len(data)}}
 
 

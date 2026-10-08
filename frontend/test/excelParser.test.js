@@ -1,7 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import * as XLSX from 'xlsx'
 
-import { buildContent } from '../src/utils/excelParser.js'
+import { buildContent, parseExcel } from '../src/utils/excelParser.js'
+
+test('ignores rows that only contain values outside business columns', async () => {
+  const workbook = XLSX.utils.book_new()
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['设备编码', '设备类型', '设备中文', '附加编号', '', '', '', '', '残留列'],
+    ['P111-10', '监视模块', '切非反馈', '_N1L09-M01_MK-1', '', '', '', '', '_N1L09-M07'],
+    ['', '', '', '', '', '', '', '', '_N1L09-M08']
+  ])
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Sheet1')
+  const bytes = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
+
+  const parsed = await parseExcel(new Blob([bytes]))
+
+  assert.equal(parsed.excelType, 'B')
+  assert.equal(parsed.rows.length, 1)
+  assert.equal(parsed.rows[0]['设备编码'], 'P111-10')
+  assert.equal(parsed.rows[0]['附加编号'], '_N1L09-M01_MK-1')
+})
 
 test('builds type B content with signal description', () => {
   const row = {

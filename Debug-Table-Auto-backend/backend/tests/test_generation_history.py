@@ -31,6 +31,7 @@ def test_successful_v2_generation_records_nested_row_mappings(tmp_path: Path) ->
         )
         generation_id = response.headers["X-Generation-ID"]
         list_response = client.get("/api/generations")
+        filtered_response = client.get("/api/generations", params={"integrationCode": "T19"})
         detail_response = client.get(f"/api/generations/{generation_id}")
         download_response = client.get(f"/api/generations/{generation_id}/download")
 
@@ -44,6 +45,7 @@ def test_successful_v2_generation_records_nested_row_mappings(tmp_path: Path) ->
     assert list_response.json()["meta"] == {"count": 1}
     summary = list_response.json()["data"][0]
     assert summary["id"] == generation_id
+    assert summary["integrationCode"] == "T19"
     assert summary["requestId"] == "generation-test-request"
     assert summary["outputSha256"] == hashlib.sha256(response.content).hexdigest().upper()
     assert summary["counts"] == {
@@ -52,6 +54,7 @@ def test_successful_v2_generation_records_nested_row_mappings(tmp_path: Path) ->
         "resultOutputs": 9,
         "disciplines": 11,
     }
+    assert filtered_response.json()["meta"] == {"count": 1}
 
     detail = detail_response.json()["data"]
     assert [item["excelRowNumber"] for item in detail["testContents"]] == [3, 4]

@@ -595,8 +595,8 @@ Jobs：
 | 步骤 8：整合 Vue 静态构建和本地 Release | 已完成 | FastAPI 在 staging/打包态提供 Vue 静态文件与 SPA fallback，且 `/api` 优先。已增加统一可执行入口、PyInstaller onedir spec、构建与黑盒验证脚本。Windows 发布目录可独立启动，页面、health 和 v2 正式下载通过；底表位于 `DebugTableAuto.exe` 同目录，发布副本 SHA-256 为锁定值。生成 ZIP 为 `DebugTableAuto-1.0.0-windows-amd64.zip`。 |
 | 步骤 9：GitHub CI 与 Release | 已完成本地实现，待 GitHub 实跑 | CI 覆盖前端、后端质量、Windows/Linux 测试、仓库卫生、漏洞审计和 Windows dry-run。Release 只在目标为 `main` 的 PR 成功合并后触发；直接 push、关闭但未合并的 PR 均不发布。资产为包含 EXE 及 onedir 运行目录的 Windows x64 ZIP、Linux x64 DEB、独立导入模板、CycloneDX SBOM 和 `SHA256SUMS.txt`；所有 Action 固定完整提交 SHA。 |
 | 增补阶段：规则目录数据库与登录兼容 | 已完成 | 后端 README 已固化设备类型、测试内容、操作步骤、结果输出、责任专业及多对多关联的表字段。实现首次访问创建的 SQLite Schema、设备类型/嵌套规则只读接口和可配置凭据的 `/api/auth/login`；未预填业务规则、未增加规则写接口、未修改前端。CSV 仅保留为后续经确认的导入/导出格式。 |
-| 增补阶段：桌面发行版初始登录 | 已完成 | 打包后的 EXE/DEB 在未配置用户名和密码时提供 `admin / 123456` 初始登录，并由发布黑盒测试实际请求 `/api/auth/login`；源码/服务器模式仍要求环境变量，显式配置优先于初始值。 |
+| 增补阶段：桌面发行版初始登录 | 已废弃 | 旧的打包默认账号方案已移除；当前 EXE/DEB 与源码服务统一使用 SQLite 账号库，首次打开登录页创建首个账号。 |
 | 增补阶段：生成记录与数据库维护 | 已完成 | SQLite Schema 升级至 v2；正式 v2 成功生成后事务性记录请求 ID、文件名、成品 SHA-256、地点、层级快照及三张业务表的 Excel 行号，响应返回 `X-Generation-ID`。增加生成历史只读 API，以及数据库初始化/升级、完整性检查和在线备份命令；失败请求不写历史。Windows Release 已重建，黑盒已生成并查回 2 内容/3 步骤/9 结果记录。 |
 | 步骤 10：最终回归和交付 | 未开始 | 待工作流在 GitHub Runner 实际通过后完成最终交付。 |
 
-阶段验证结果：后端 pytest `54 passed`、覆盖率 `89.23%`，Ruff 与 mypy 通过；前端 Node 测试 `9 passed`，Vite 生产构建成功。Formal 下载名采用 `最终导入表_站点_类型1_类型2_YYYYMMDDHHMMSS.xls`，设备类型按首次出现顺序去重且时间戳固定在最后；站点的开始/结束站点同步且由后端复核。Windows onedir 已重新编译，黑盒验证页面、`admin / 123456` 初始登录、API、外置底表、五表输出及生成记录回查均通过。默认 SQLite Schema v2 完整性为 `ok`、外键错误为 `0`，在线备份及本机 sqlite3 CLI 只读核对通过。当前受限文件系统不允许 pytest/Ruff 创建缓存临时文件，因此 pytest 配置关闭 cacheprovider，Ruff 验证使用 `--no-cache`；这不改变测试断言或运行时代码。
+阶段验证结果：后端 pytest `54 passed`、覆盖率 `89.23%`，Ruff 与 mypy 通过；前端 Node 测试 `9 passed`，Vite 生产构建成功。Formal 下载名采用 `最终导入表_站点_类型1_类型2_YYYYMMDDHHMMSS.xls`，设备类型按首次出现顺序去重且时间戳固定在最后；站点的开始/结束站点同步且由后端复核。Windows onedir 已重新编译，黑盒验证页面、账号初始化、API、外置底表、五表输出及生成记录回查均通过。默认 SQLite Schema v2 完整性为 `ok`、外键错误为 `0`，在线备份及本机 sqlite3 CLI 只读核对通过。当前受限文件系统不允许 pytest/Ruff 创建缓存临时文件，因此 pytest 配置关闭 cacheprovider，Ruff 验证使用 `--no-cache`；这不改变测试断言或运行时代码。

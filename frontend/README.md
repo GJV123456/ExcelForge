@@ -19,10 +19,10 @@ npm.cmd run build
 
 ## 本地联调
 
-先从仓库根目录启动后端：
+当前工作台需要完整的目录配置、正式生成和历史接口，请先启动完整后端：
 
 ```powershell
-& 'backend\.venv\Scripts\python.exe' -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+& 'Debug-Table-Auto-backend\backend\.venv\Scripts\python.exe' -m uvicorn app.main:app --app-dir Debug-Table-Auto-backend\backend --host 127.0.0.1 --port 8000
 ```
 
 再启动前端：
@@ -40,8 +40,9 @@ npm.cmd run dev
 VITE_API_PROXY_TARGET=http://127.0.0.1:8000
 ```
 
-开发环境默认保留模拟登录，用户名 `admin`、密码 `123456`。Excel 处理不再
-使用浏览器本地 Mock；Mock/Formal 模式由后端统一控制。
+登录页首次使用时创建首个账号，账号和密码由后端 SQLite 数据库管理；前端不再
+默认使用内置账号。Excel 处理不再使用浏览器本地 Mock；Mock/Formal 模式由后端
+统一控制。
 
 正式生成前需在启动后端前设置：
 
@@ -97,3 +98,7 @@ Content-Type: application/json
 页面按设备类型提供操作步骤、是否变比、结果输出和责任专业配置，不预填业务
 规则。地点只允许站点、区间和全线；选择站点时只输入一次站名，提交时开始站点
 和结束站点均填写该站名。
+
+工作台属于 T19 联调子系统。未选择 T19 时，测试地点、Excel 处理、规则、预览、
+生成和历史记录区域保持折叠；请求会带 `integrationCode: "T19"`，后端历史记录也
+按该联调项目过滤。

@@ -14,6 +14,7 @@ from app.api.generation import router as generation_router
 from app.api.v2.excel import router as excel_v2_router
 from app.config import Settings
 from app.db.catalog import CatalogRepository
+from app.db.auth import AuthRepository
 from app.db.generation import GenerationRepository
 from app.exceptions import register_exception_handlers
 from app.resource_paths import resolve_database_path, resolve_frontend_dist_path
@@ -43,6 +44,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title="ExcelForge API", version="1.0.0")
     application.state.settings = settings or Settings.from_environment()
     application.state.catalog_repository = CatalogRepository(
+        resolve_database_path(application.state.settings.database_path)
+    )
+    application.state.auth_repository = AuthRepository(
         resolve_database_path(application.state.settings.database_path)
     )
     application.state.generation_repository = GenerationRepository(

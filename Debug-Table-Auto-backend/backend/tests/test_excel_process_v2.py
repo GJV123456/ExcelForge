@@ -223,6 +223,57 @@ def test_v2_rejects_whitespace_only_text_and_discipline_delimiters() -> None:
     assert comma_response.json()["code"] == "INVALID_DISCIPLINE_NAME"
 
 
+def test_v2_generates_400v_cutoff_rows() -> None:
+    operation_steps = [
+        {
+            "description": "执行切非测试",
+            "ratioChange": "否",
+            "results": [
+                {"description": "系统显示切非状态", "responsibleDisciplines": ["FAS"]}
+            ],
+        }
+    ]
+    payload = {
+        "integrationCode": "T19",
+        "testLocation": {
+            "type": "站点",
+            "direction": "",
+            "startStation": "A站",
+            "endStation": "A站",
+        },
+        "testContents": [
+            {
+                "sortIndex": index,
+                "generatedContent": f"{equipment_chinese}{equipment_type}{code}{suffix}",
+                "equipmentCode": code,
+                "equipmentType": equipment_type,
+                "equipmentChinese": equipment_chinese,
+                "additionalCode": suffix,
+                "equipmentSubtype": "400V切非",
+                "equipmentStatus": "切非反馈" if equipment_type == "监视模块" else "切非",
+                "operationSteps": operation_steps,
+            }
+            for index, (code, equipment_type, equipment_chinese, suffix) in enumerate(
+                (
+                    ("P111-10", "监视模块", "B端供电房间双切箱切非反馈", "_N1L09-M01_MK-1"),
+                    ("P111-10", "控制模块", "B端供电房间双切箱切非", "_N1L09-M02_MK-1"),
+                    ("P210-10", "监视模块", "B端供电房间双切箱切非反馈", "_N1L09-M03_MK-1"),
+                    ("P210-10", "控制模块", "B端供电房间双切箱切非", "_N1L09-M04_MK-1"),
+                    ("P108-10", "监视模块", "A端区间工作照明切非反馈", "_N1L09-M05_MK-1"),
+                    ("P108-10", "控制模块", "A端区间工作照明切非", "_N1L09-M06_MK-1"),
+                    ("P207-10", "监视模块", "A端区间工作照明切非反馈", "_N1L09-M07_MK-1"),
+                ),
+                start=1,
+            )
+        ],
+    }
+    with _formal_client() as client:
+        response = client.post("/api/v2/excel/process", json=payload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.ms-excel"
+
+
 def test_writer_rejects_biff8_row_overflow_before_copying_template() -> None:
     result = ResultRow(description="结果", responsible_disciplines=("FAS",))
     step = OperationStepRow(description="步骤", ratio_change="否", results=(result,))
