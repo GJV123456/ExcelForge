@@ -55,7 +55,7 @@ const editorMode = ref('empty')
 const draft = ref(null)
 const baseline = ref('')
 const undoAction = ref(null)
-// 部分旧后端版本没有在 GET 响应中回传子类型。保存成功后先在本次页面会话中
+// 部分历史目录响应可能没有回传子类型。保存成功后先在本次页面会话中
 // 保留提交的子类型，避免重新加载时暂时丢失筛选结果。
 const ruleSelectorOverrides = reactive(new Map())
 
@@ -1526,3 +1526,4 @@ onMounted(async () => {
   .editor-footer .rule-save-button { min-width: 0; }
 }
 </style>
+

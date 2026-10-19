@@ -469,7 +469,7 @@ export function deleteTestContent(id) {
 ## 13. 与正式导出接口的关系
 
 ```http
-POST /api/v2/excel/process
+POST /api/excel/process
 ```
 
 正式导出请求只需要提交前端解析好的 `testContents`。当某条记录没有传 `operationSteps` 时，后端会按 `equipmentSubtype` 优先、`equipmentType` 兜底，从 SQLite 读取最新规则并自动补全。
@@ -479,3 +479,4 @@ POST /api/v2/excel/process
 - 规则维护页面修改成功后，不需要修改导出接口；
 - 下一次导出会自动使用数据库中的最新步骤和输出结果；
 - 前端导出时不要把规则编辑页面的临时草稿混入请求，除非明确要覆盖数据库规则。
+

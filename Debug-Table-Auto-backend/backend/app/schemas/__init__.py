@@ -1,6 +1,6 @@
 """External API schemas."""
 
-from app.schemas.excel import ExcelProcessRequest, TestContent, TestLocation
-from app.schemas.excel_v2 import ExcelProcessV2Request
+from app.schemas.common import TestLocation
+from app.schemas.excel import ExcelProcessRequest
 
-__all__ = ["ExcelProcessRequest", "ExcelProcessV2Request", "TestContent", "TestLocation"]
+__all__ = ["ExcelProcessRequest", "TestLocation"]

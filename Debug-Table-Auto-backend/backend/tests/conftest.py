@@ -9,5 +9,6 @@ from app.main import create_app
 
 @pytest.fixture
 def client() -> TestClient:
-    with TestClient(create_app(Settings(mode="mock", mock_delay_seconds=0))) as test_client:
+    with TestClient(create_app(Settings(mode="formal"))) as test_client:
         yield test_client
+

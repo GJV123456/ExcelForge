@@ -72,3 +72,4 @@ python backend/scripts/seed_equipment_hierarchy.py --database backend/data/excel
 ```
 
 重新执行该命令是幂等的，只会补充或恢复上述关系，不会删除规则。
+

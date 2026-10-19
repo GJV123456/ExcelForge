@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.db.catalog import CatalogRepository
-from app.schemas.excel_v2 import ExcelProcessV2Request
+from app.schemas.excel import ExcelProcessRequest
 from app.schemas.generation import (
     GenerationContentItem,
     GenerationCounts,
@@ -39,7 +39,7 @@ class GenerationRepository:
 
     def record_success(
         self,
-        request: ExcelProcessV2Request,
+        request: ExcelProcessRequest,
         *,
         request_id: str,
         generated_at: datetime,
@@ -358,3 +358,4 @@ class GenerationRepository:
                 disciplines=int(row["discipline_count"]),
             ),
         )
+

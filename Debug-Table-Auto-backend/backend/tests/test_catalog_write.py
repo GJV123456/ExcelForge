@@ -10,7 +10,7 @@ from app.main import create_app
 
 
 def _client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(Settings(mode="mock", database_path=tmp_path / "catalog.sqlite3")))
+    return TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "catalog.sqlite3")))
 
 
 def test_catalog_write_cycle(tmp_path: Path) -> None:
@@ -471,3 +471,5 @@ def test_subtype_statuses_can_be_updated_without_deleting_used_rules(tmp_path: P
             json={"statuses": ["FAS主机人工确定按钮", "fas主机人工确定按钮"]},
         )
         assert duplicate.status_code == 422
+
+

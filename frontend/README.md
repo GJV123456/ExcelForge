@@ -1,104 +1,13 @@
 # ExcelForge 前端
 
-Vue 3 + Vite + Element Plus 前端。源码位于仓库的 `frontend/` 目录，Excel
-上传与解析仍在浏览器中完成，生成请求统一发送到 FastAPI 后端。
+Vue 3 + Vite + Element Plus 前端，源码位于 `frontend/`。Excel 在浏览器中解析，正式生成统一提交到 `POST /api/excel/process`。
 
-## 安装与测试
-
-在仓库根目录执行：
+先按根目录 README 启动正式后端，再执行：
 
 ```powershell
 cd frontend
 npm.cmd ci
-npm.cmd test
-npm.cmd run build
-```
-
-`node_modules/`、`dist/`、`.env*`（`.env.example` 除外）、日志、IDE 和操作
-系统文件均由 Git 忽略。
-
-## 本地联调
-
-当前工作台需要完整的目录配置、正式生成和历史接口，请先启动完整后端：
-
-```powershell
-& 'Debug-Table-Auto-backend\backend\.venv\Scripts\python.exe' -m uvicorn app.main:app --app-dir Debug-Table-Auto-backend\backend --host 127.0.0.1 --port 8000
-```
-
-再启动前端：
-
-```powershell
-cd frontend
 npm.cmd run dev
 ```
 
-浏览器访问 `http://127.0.0.1:5173/`。前端请求相对路径
-`/api/v2/excel/process`，Vite 默认代理到 `http://127.0.0.1:8000`。如需改变代理
-目标，复制 `.env.example` 为 `.env.local` 并设置：
-
-```env
-VITE_API_PROXY_TARGET=http://127.0.0.1:8000
-```
-
-登录页首次使用时创建首个账号，账号和密码由后端 SQLite 数据库管理；前端不再
-默认使用内置账号。Excel 处理不再使用浏览器本地 Mock；Mock/Formal 模式由后端
-统一控制。
-
-正式生成前需在启动后端前设置：
-
-```powershell
-$env:EXCELFORGE_MODE='formal'
-```
-
-## Excel 处理接口
-
-```http
-POST /api/v2/excel/process
-Content-Type: application/json
-```
-
-请求使用 v2 camelCase 契约；v1 的既有字段保持不变，每条测试内容新增显式的
-`operationSteps`：
-
-```json
-{
-  "testLocation": {
-    "type": "站点",
-    "direction": "",
-    "startStation": "A站",
-    "endStation": "A站"
-  },
-  "testContents": [
-    {
-      "sortIndex": 1,
-      "generatedContent": "站厅B端车控室烟感N1L1D01",
-      "equipmentCode": "N1L1D01",
-      "equipmentType": "烟感",
-      "operationSteps": [
-        {
-          "description": "执行测试",
-          "ratioChange": "否",
-          "results": [
-            {
-              "description": "确认测试结果",
-              "responsibleDisciplines": ["FAS", "综合监控"]
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-前端使用 Blob 接收 BIFF8 `.xls`，优先采用后端 `Content-Disposition` 文件
-名。后端 JSON 错误即使以 Blob 返回，也会还原并显示 `detail`，不会显示
-`[object Blob]`。
-
-页面按设备类型提供操作步骤、是否变比、结果输出和责任专业配置，不预填业务
-规则。地点只允许站点、区间和全线；选择站点时只输入一次站名，提交时开始站点
-和结束站点均填写该站名。
-
-工作台属于 T19 联调子系统。未选择 T19 时，测试地点、Excel 处理、规则、预览、
-生成和历史记录区域保持折叠；请求会带 `integrationCode: "T19"`，后端历史记录也
-按该联调项目过滤。
+Vite 默认将 `/api` 代理到 `http://127.0.0.1:8000`，可通过 `VITE_API_PROXY_TARGET` 覆盖。

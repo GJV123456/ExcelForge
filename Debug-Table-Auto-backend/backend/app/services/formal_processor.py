@@ -16,9 +16,9 @@ from app.domain.workbook import (
 )
 from app.exceptions import BusinessError
 from app.resource_paths import resolve_catalog_database_path
-from app.schemas.excel_v2 import ExcelProcessV2Request, V2TestContent
-from app.services.excel_processor import XLS_MEDIA_TYPE, ProcessedFile
-from app.utils.xls_writer import build_formal_workbook
+from app.schemas.excel import ExcelProcessRequest, FormalTestContent
+from app.services.result import XLS_MEDIA_TYPE, ProcessedFile
+from app.utils.formal_workbook import build_formal_workbook
 
 FORMAL_FILENAME_SUFFIX = "导入版V1"
 ALLOWED_LOCATION_TYPES = frozenset({"全线", "区间", "站点"})
@@ -31,7 +31,7 @@ INTERVAL_DIRECTION_PATTERN = re.compile(
 )
 
 
-def _source_values(item: V2TestContent) -> tuple[str, ...]:
+def _source_values(item: FormalTestContent) -> tuple[str, ...]:
     return tuple(
         value.strip()
         for value in (
@@ -45,7 +45,7 @@ def _source_values(item: V2TestContent) -> tuple[str, ...]:
     )
 
 
-def _interval_context(item: V2TestContent) -> tuple[str, str]:
+def _interval_context(item: FormalTestContent) -> tuple[str, str]:
     for value in _source_values(item):
         match = INTERVAL_DIRECTION_PATTERN.search(value)
         if match:
@@ -66,7 +66,7 @@ def _require_text(value: str, path: list[str | int]) -> str:
     return cleaned
 
 
-def _build_location(request: ExcelProcessV2Request) -> LocationRow:
+def _build_location(request: ExcelProcessRequest) -> LocationRow:
     location = request.test_location
     location_type = _require_text(location.location_type, ["testLocation", "type"])
     if location_type not in ALLOWED_LOCATION_TYPES:
@@ -118,7 +118,7 @@ def _build_location(request: ExcelProcessV2Request) -> LocationRow:
     return LocationRow(location_type, direction, start_station, end_station, ())
 
 
-def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[dict[str, object]]:
+def _catalog_steps(item: FormalTestContent, repository: CatalogRepository) -> list[dict[str, object]]:
     """Resolve the fixed operation/result hierarchy stored in SQLite.
 
     Resolve rules by equipment type first, then subtype, then status/action.
@@ -300,7 +300,7 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
 
 
 def _infer_electric_damper_statuses(
-    request: ExcelProcessV2Request, contents: list[dict[str, object]]
+    request: ExcelProcessRequest, contents: list[dict[str, object]]
 ) -> None:
     """Recover the two statuses omitted by the legacy FF2 source sheet.
 
@@ -338,8 +338,8 @@ def _infer_electric_damper_statuses(
 
 
 def prepare_formal_request(
-    request: ExcelProcessV2Request, settings: Settings
-) -> ExcelProcessV2Request:
+    request: ExcelProcessRequest, settings: Settings
+) -> ExcelProcessRequest:
     """Fill omitted operationSteps from the SQLite rule catalog."""
     if all(content.operation_steps for content in request.test_contents):
         return request
@@ -363,10 +363,10 @@ def prepare_formal_request(
                 update={"equipment_status": resolved_status}
             )
         contents[index]["operationSteps"] = _catalog_steps(resolved_content, repository)
-    return ExcelProcessV2Request.model_validate(payload)
+    return ExcelProcessRequest.model_validate(payload)
 
 
-def _validate_sort_indexes(request: ExcelProcessV2Request) -> None:
+def _validate_sort_indexes(request: ExcelProcessRequest) -> None:
     previous = 0
     for index, content in enumerate(request.test_contents):
         if content.sort_index <= previous:
@@ -423,7 +423,7 @@ def _validate_workbook_limits(workbook: FormalWorkbook) -> None:
         )
 
 
-def _build_workbook(request: ExcelProcessV2Request) -> FormalWorkbook:
+def _build_workbook(request: ExcelProcessRequest) -> FormalWorkbook:
     _validate_sort_indexes(request)
     contents = tuple(
         TestContentRow(
@@ -499,7 +499,7 @@ _FILENAME_PROFILES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
 )
 
 
-def _filename_source_text(request: ExcelProcessV2Request) -> str:
+def _filename_source_text(request: ExcelProcessRequest) -> str:
     return " ".join(
         value.strip()
         for value in (
@@ -513,7 +513,7 @@ def _filename_source_text(request: ExcelProcessV2Request) -> str:
     )
 
 
-def _filename_profile(request: ExcelProcessV2Request) -> tuple[str, str, str]:
+def _filename_profile(request: ExcelProcessRequest) -> tuple[str, str, str]:
     # The classified subtype is the most reliable signal for telephone
     # workbooks. Other rows or the uploaded workbook's old canonical filename
     # can mention both station and interval terminology.
@@ -556,7 +556,7 @@ def _filename_profile(request: ExcelProcessV2Request) -> tuple[str, str, str]:
 
 
 def _formal_filename(
-    request: ExcelProcessV2Request, workbook: FormalWorkbook, generated_at: datetime
+    request: ExcelProcessRequest, workbook: FormalWorkbook, generated_at: datetime
 ) -> str:
     station = workbook.location.stations[0] if workbook.location.stations else (
         workbook.location.start_station or workbook.location.location_type
@@ -573,14 +573,12 @@ def _formal_filename(
 
 
 def process_formal_request(
-    request: ExcelProcessV2Request,
+    request: ExcelProcessRequest,
     settings: Settings,
     *,
     generated_at: datetime | None = None,
 ) -> ProcessedFile:
     """Generate a formal file only through the explicit v2 contract."""
-    if settings.mode != "formal":
-        raise BusinessError("当前服务未启用正式生成模式", "FORMAL_MODE_DISABLED")
     request = prepare_formal_request(request, settings)
     workbook = _build_workbook(request)
     content = build_formal_workbook(workbook, settings.template_path)
@@ -588,3 +586,6 @@ def process_formal_request(
         request, workbook, generated_at or datetime.now().astimezone()
     )
     return ProcessedFile(content=content, filename=filename, media_type=XLS_MEDIA_TYPE)
+
+
+

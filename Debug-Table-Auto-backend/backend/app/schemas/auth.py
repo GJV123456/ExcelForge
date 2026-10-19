@@ -6,7 +6,7 @@ from typing import Annotated
 
 from pydantic import Field, StrictBool, StringConstraints
 
-from app.schemas.excel import ApiModel
+from app.schemas.common import ApiModel
 
 CredentialText = Annotated[
     str,

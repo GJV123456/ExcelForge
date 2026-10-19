@@ -1,95 +1,32 @@
-"""Low-level BIFF8 workbook copying primitives."""
+"""BIFF8 workbook copying and formal data writing."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import xlrd
-import xlwt
 from xlrd.book import Book
-from xlutils.copy import copy as copy_workbook
 from xlutils.filter import XLRDReader, XLWTWriter, process
 
 from app.domain.workbook import FormalWorkbook
-from app.utils.template_provider import open_template, validate_template_structure
-
-MOCK_SHEET_NAME = "联调占位"
-MOCK_WARNING = "联调占位文件，不可导入正式系统"
-
-
-@dataclass(frozen=True, slots=True)
-class MockWorkbookRow:
-    sort_index: int
-    generated_content: str
-    equipment_code: str
-    equipment_type: str
-
-
-def _safe_excel_text(value: str) -> str:
-    if value.startswith(("=", "+", "-", "@")):
-        return f"'{value}"
-    return value
-
-
-def build_mock_workbook(
-    location: tuple[str, str, str, str], rows: Sequence[MockWorkbookRow]
-) -> bytes:
-    """Build a visibly non-production BIFF8 file for transport testing."""
-    workbook = xlwt.Workbook(encoding="utf-8")
-    sheet = workbook.add_sheet(MOCK_SHEET_NAME)
-
-    warning_style = xlwt.easyxf("font: bold on, colour red;")
-    header_style = xlwt.easyxf("font: bold on; pattern: pattern solid, fore_colour gray25;")
-    sheet.write(0, 0, MOCK_WARNING, warning_style)
-
-    location_headers = ("地点类型", "行车方向", "开始站点", "结束站点")
-    for column, header in enumerate(location_headers):
-        sheet.write(2, column, header, header_style)
-        sheet.write(3, column, _safe_excel_text(location[column]))
-
-    content_headers = ("sortIndex", "generatedContent", "equipmentCode", "equipmentType")
-    for column, header in enumerate(content_headers):
-        sheet.write(5, column, header, header_style)
-
-    for row_number, row in enumerate(rows, start=6):
-        sheet.write(row_number, 0, row.sort_index)
-        sheet.write(row_number, 1, _safe_excel_text(row.generated_content))
-        sheet.write(row_number, 2, _safe_excel_text(row.equipment_code))
-        sheet.write(row_number, 3, _safe_excel_text(row.equipment_type))
-
-    output = BytesIO()
-    workbook.save(output)
-    content = output.getvalue()
-    reopened = xlrd.open_workbook(file_contents=content)
-    if reopened.sheet_names() != [MOCK_SHEET_NAME]:
-        raise RuntimeError("Mock workbook self-check failed")
-    if reopened.sheet_by_index(0).cell_value(0, 0) != MOCK_WARNING:
-        raise RuntimeError("Mock workbook warning marker is missing")
-    return content
+from app.utils.template_provider import open_template
 
 
 def copy_template_bytes(template_path: Path | None = None) -> bytes:
-    """Round-trip the approved template without writing business data."""
     source = open_template(template_path)
+    from xlutils.copy import copy as copy_workbook
+
     writable = copy_workbook(source)
     output = BytesIO()
     writable.save(output)
-    result = output.getvalue()
-
-    reopened = xlrd.open_workbook(file_contents=result, formatting_info=True)
-    validate_template_structure(reopened)
-    return result
+    return output.getvalue()
 
 
 def open_generated_workbook(content: bytes) -> Book:
-    """Reopen generated BIFF8 content for post-write validation."""
-    workbook = xlrd.open_workbook(file_contents=content, formatting_info=True)
-    validate_template_structure(workbook)
-    return workbook
+    return xlrd.open_workbook(file_contents=content, formatting_info=True)
 
 
 def _copy_template_with_styles(template_path: Path | None = None) -> tuple[Book, Any, list[Any]]:
@@ -141,7 +78,6 @@ def _write_table(
             end_writer.set_cell_text(column, "end", style)
         else:
             end_writer.set_cell_blank(column, style)
-
     if end_row < 3:
         stale_writer = target_sheet.row(3)
         for column in range(column_count):
@@ -150,11 +86,10 @@ def _write_table(
 
 
 def _formal_rows(workbook: FormalWorkbook) -> tuple[list[list[str | int]], ...]:
-    location_stations = workbook.location.stations
-    if location_stations:
+    if workbook.location.stations:
         location = [
             [workbook.location.location_type, workbook.location.direction, station, station]
-            for station in location_stations
+            for station in workbook.location.stations
         ]
     else:
         location = [[
@@ -163,9 +98,7 @@ def _formal_rows(workbook: FormalWorkbook) -> tuple[list[list[str | int]], ...]:
             workbook.location.start_station,
             workbook.location.end_station,
         ]]
-    contents: list[list[str | int]] = [
-        [content.generated_content] for content in workbook.test_contents
-    ]
+    contents = [[content.generated_content] for content in workbook.test_contents]
     steps: list[list[str | int]] = []
     results: list[list[str | int]] = []
     next_step_excel_row = 3
@@ -175,13 +108,10 @@ def _formal_rows(workbook: FormalWorkbook) -> tuple[list[list[str | int]], ...]:
             step_excel_row = next_step_excel_row
             next_step_excel_row += 1
             steps.append([content_excel_row, step.description, step.ratio_change])
-            for result in step.results:
-                results.append([
-                    step_excel_row,
-                    result.description,
-                    ",".join(result.responsible_disciplines),
-                    "",
-                ])
+            results.extend([
+                [step_excel_row, result.description, ",".join(result.responsible_disciplines), ""]
+                for result in step.results
+            ])
     return location, contents, steps, results, []
 
 
@@ -191,9 +121,7 @@ def _validate_formal_output(content: bytes, expected_end_rows: Sequence[int]) ->
     if reopened.sheet_names() != expected_names:
         raise RuntimeError("Formal workbook sheet contract failed")
     for sheet, expected_end_row in zip(reopened.sheets(), expected_end_rows, strict=True):
-        end_rows = [
-            row for row in range(sheet.nrows) if sheet.cell_value(row, 0) == "end"
-        ]
+        end_rows = [row for row in range(sheet.nrows) if sheet.cell_value(row, 0) == "end"]
         if end_rows != [expected_end_row]:
             raise RuntimeError(f"Formal workbook end marker failed for {sheet.name}")
     result_sheet = reopened.sheet_by_name("结果输出")
@@ -207,24 +135,15 @@ def _validate_formal_output(content: bytes, expected_end_rows: Sequence[int]) ->
         raise RuntimeError("Formal workbook formula sheet contract failed")
 
 
-def build_formal_workbook(
-    workbook: FormalWorkbook, template_path: Path | None = None
-) -> bytes:
-    """Copy the approved template and write the explicit v2 formal model."""
+def build_formal_workbook(workbook: FormalWorkbook, template_path: Path | None = None) -> bytes:
     table_rows = _formal_rows(workbook)
     if any(len(rows) + 2 >= 65_536 for rows in table_rows):
         raise ValueError("BIFF8 row limit exceeded")
     source, writable, styles = _copy_template_with_styles(template_path)
-    expected_end_rows: list[int] = []
-    for sheet_index, rows in enumerate(table_rows):
-        expected_end_rows.append(
-            _write_table(
-                source.sheet_by_index(sheet_index),
-                writable.get_sheet(sheet_index),
-                styles,
-                rows,
-            )
-        )
+    expected_end_rows = [
+        _write_table(source.sheet_by_index(index), writable.get_sheet(index), styles, rows)
+        for index, rows in enumerate(table_rows)
+    ]
     output = BytesIO()
     writable.save(output)
     content = output.getvalue()

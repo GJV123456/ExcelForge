@@ -386,7 +386,7 @@ HTTP/1.1 404 Not Found
 整体透传。
 
 ```http
-POST /api/v2/excel/process
+POST /api/excel/process
 ```
 
 主要字段对应：
@@ -703,3 +703,4 @@ const message =
 - 导入方式：后端管理命令或受鉴权的管理接口完成全量校验、事务导入；
 - 前端业务页面：继续只调用本文的只读 API，不直接读取 CSV；
 - CSV 列结构、覆盖策略和责任人确认前，不实现导入功能。
+

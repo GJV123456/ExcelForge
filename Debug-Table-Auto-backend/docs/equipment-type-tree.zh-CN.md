@@ -281,3 +281,4 @@ equipment_type_subtypes：31 条
 equipment_subtype_statuses：96 条
 equipment_type_statuses：6 条
 ```
+

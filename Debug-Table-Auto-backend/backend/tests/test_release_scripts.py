@@ -49,3 +49,4 @@ def test_debian_package_layout_and_control_file(tmp_path: Path, monkeypatch) -> 
     assert launcher.read_text(encoding="utf-8").startswith("#!/bin/sh")
     assert (package_root / "opt/debug-table-auto/联调测试表导入模版.xls").is_file()
     assert calls[0][:3] == ["dpkg-deb", "--build", "--root-owner-group"]
+

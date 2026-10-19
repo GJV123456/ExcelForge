@@ -73,3 +73,4 @@ DELETE /api/catalog/disciplines/{disciplineId}
 
 责任专业接口的请求和响应结构与原规则目录一致，字段为 `id`、`code`、`name`、`description`、`sortOrder`、`isEnabled`。
 
+

@@ -5,27 +5,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
-ApplicationMode = Literal["mock", "formal"]
-
-
-def _mode_from_environment() -> ApplicationMode:
-    value = os.getenv("EXCELFORGE_MODE", "mock").strip().lower()
-    if value not in {"mock", "formal"}:
-        raise ValueError("EXCELFORGE_MODE must be 'mock' or 'formal'")
-    return cast(ApplicationMode, value)
-
-
-def _mock_delay_from_environment() -> float:
-    raw_value = os.getenv("EXCELFORGE_MOCK_DELAY_SECONDS", "0")
-    try:
-        value = float(raw_value)
-    except ValueError as error:
-        raise ValueError("EXCELFORGE_MOCK_DELAY_SECONDS must be a number") from error
-    if not 0 <= value <= 10:
-        raise ValueError("EXCELFORGE_MOCK_DELAY_SECONDS must be between 0 and 10")
-    return value
+ApplicationMode = Literal["formal"]
 
 
 def _template_path_from_environment() -> Path | None:
@@ -52,8 +34,7 @@ def _optional_text_from_environment(name: str) -> str | None:
 class Settings:
     """Runtime settings with production-safe defaults."""
 
-    mode: ApplicationMode = "mock"
-    mock_delay_seconds: float = 0
+    mode: ApplicationMode = "formal"
     template_path: Path | None = None
     frontend_dist_path: Path | None = None
     database_path: Path | None = None
@@ -64,8 +45,7 @@ class Settings:
     @classmethod
     def from_environment(cls) -> Settings:
         return cls(
-            mode=_mode_from_environment(),
-            mock_delay_seconds=_mock_delay_from_environment(),
+            mode="formal",
             template_path=_template_path_from_environment(),
             frontend_dist_path=_frontend_dist_from_environment(),
             database_path=_database_path_from_environment(),

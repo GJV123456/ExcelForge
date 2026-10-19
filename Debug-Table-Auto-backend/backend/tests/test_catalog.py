@@ -11,7 +11,7 @@ from app.main import create_app
 
 
 def _client(database_path: Path) -> TestClient:
-    return TestClient(create_app(Settings(mode="mock", database_path=database_path)))
+    return TestClient(create_app(Settings(mode="formal", database_path=database_path)))
 
 
 def _seed_catalog(database_path: Path) -> None:
@@ -224,7 +224,7 @@ def test_catalog_first_request_creates_empty_versioned_schema(tmp_path: Path) ->
     }
 
 
-def test_catalog_upgrades_existing_v1_database_without_losing_rules(tmp_path: Path) -> None:
+def test_catalog_upgrades_existing_database_without_losing_rules(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     with sqlite3.connect(database_path) as connection:
         connection.executescript(
@@ -528,3 +528,6 @@ def test_catalog_data_isolated_by_integration_database(tmp_path: Path) -> None:
     assert any(item["code"] == "ONLY_T20" for item in t20.json()["data"])
     assert all(item["code"] != "ONLY_T20" for item in t19.json()["data"])
     assert (tmp_path / "catalog.T20.sqlite3").is_file()
+
+
+

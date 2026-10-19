@@ -21,11 +21,11 @@ def _client(database_path: Path) -> TestClient:
     return TestClient(create_app(Settings(mode="formal", database_path=database_path)))
 
 
-def test_successful_v2_generation_records_nested_row_mappings(tmp_path: Path) -> None:
+def test_successful_generation_records_nested_row_mappings(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     with _client(database_path) as client:
         response = client.post(
-            "/api/v2/excel/process",
+            "/api/excel/process",
             json=_payload(),
             headers={"X-Request-ID": "generation-test-request"},
         )
@@ -81,13 +81,13 @@ def test_successful_v2_generation_records_nested_row_mappings(tmp_path: Path) ->
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-def test_failed_v2_generation_does_not_create_history(tmp_path: Path) -> None:
+def test_failed_generation_does_not_create_history(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     payload = _payload()
     payload["testLocation"]["endStation"] = "其他站"  # type: ignore[index]
 
     with _client(database_path) as client:
-        failed = client.post("/api/v2/excel/process", json=payload)
+        failed = client.post("/api/excel/process", json=payload)
         history = client.get("/api/generations")
 
     assert failed.status_code == 400
@@ -112,7 +112,7 @@ def test_generation_history_retains_only_the_latest_twenty_runs(tmp_path: Path) 
         generation_ids = []
         for index in range(21):
             response = client.post(
-                "/api/v2/excel/process",
+                "/api/excel/process",
                 json=_payload(),
                 headers={"X-Request-ID": f"retention-{index}"},
             )
@@ -129,3 +129,5 @@ def test_generation_history_retains_only_the_latest_twenty_runs(tmp_path: Path) 
         assert connection.execute("SELECT COUNT(*) FROM generation_runs").fetchone()[0] == 20
         assert connection.execute("SELECT COUNT(*) FROM generation_test_contents").fetchone()[0] == 40
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+

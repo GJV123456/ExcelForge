@@ -9,9 +9,9 @@ from fastapi.responses import FileResponse
 
 from app.api.auth import router as auth_router
 from app.api.catalog import router as catalog_router
-from app.api.excel import router as excel_router
+from app.api.health import router as health_router
 from app.api.generation import router as generation_router
-from app.api.v2.excel import router as excel_v2_router
+from app.api.excel import router as excel_router
 from app.config import Settings
 from app.db.catalog import CatalogRepository
 from app.db.auth import AuthRepository
@@ -79,10 +79,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(auth_router)
     application.include_router(catalog_router)
     application.include_router(generation_router)
+    application.include_router(health_router)
     application.include_router(excel_router)
-    application.include_router(excel_v2_router)
     _register_frontend(application, application.state.settings)
     return application
 
 
 app = create_app()
+

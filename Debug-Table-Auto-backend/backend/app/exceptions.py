@@ -52,7 +52,7 @@ def _error_body(
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    """Register the v1 JSON error contract on an application."""
+    """Register the JSON error contract on an application."""
 
     @app.exception_handler(BusinessError)
     async def handle_business_error(request: Request, error: BusinessError) -> JSONResponse:

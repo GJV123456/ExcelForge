@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints, field_validator
 from typing_extensions import TypedDict
 
-from app.schemas.excel import ApiModel
+from app.schemas.common import ApiModel
 
 TrimmedText = Annotated[
     str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)

@@ -73,8 +73,6 @@ def main() -> None:
             "127.0.0.1",
             "--port",
             "8030",
-            "--mode",
-            "formal",
             "--no-browser",
         ],
         cwd=release,
@@ -103,7 +101,7 @@ def main() -> None:
             LOGIN_PAYLOAD,
         )
         status, workbook_bytes, headers = _request(
-            "http://127.0.0.1:8030/api/v2/excel/process",
+            "http://127.0.0.1:8030/api/excel/process",
             FIXTURE.read_bytes(),
         )
         workbook = xlrd.open_workbook(file_contents=workbook_bytes)
@@ -159,3 +157,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

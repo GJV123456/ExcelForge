@@ -10,7 +10,7 @@ import LoadingDialog from '../components/LoadingDialog.vue'
 import { useExcelStore } from '../store/excel'
 import { buildContent, extractEquipmentCode } from '../utils/excelParser'
 import { deriveEquipmentClassification, inferElectricDamperStatus } from '../utils/equipmentSubtype'
-import { downloadGeneration, getGeneration, getGenerations, processExcelV2 } from '../api/excel'
+import { downloadGeneration, getGeneration, getGenerations, processExcel } from '../api/excel'
 import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
 import { buildTestLocation, validateFormalLocation } from '../utils/formalLocation'
@@ -174,7 +174,7 @@ const submit = async () => {
   const testContents = baseTestContents.value
   loading.value = true
   try {
-    const response = await processExcelV2({
+    const response = await processExcel({
       integrationCode: selectedIntegration.value,
       sourceFilename: excel.file?.name || '',
       testLocation: buildTestLocation(location),

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.exceptions import BusinessError
-from app.schemas.excel_v2 import V2TestContent
+from app.schemas.excel import FormalTestContent
 from app.services.formal_processor import _catalog_steps, _infer_electric_damper_statuses
 
 
@@ -35,8 +35,8 @@ def _rule(status: str, description: str) -> dict[str, object]:
     }
 
 
-def _item(status: str) -> V2TestContent:
-    return V2TestContent(
+def _item(status: str) -> FormalTestContent:
+    return FormalTestContent(
         sortIndex=1,
         generatedContent=f"站厅B端ASD-1{status}监视模块N1L1M68",
         equipmentChinese=f"站厅B端ASD-1{status}监视模块N1L1M68",
@@ -148,9 +148,9 @@ def test_legacy_ff2_pair_gets_separate_electric_damper_statuses() -> None:
             for index in (1, 2)
         ],
     }
-    from app.schemas.excel_v2 import ExcelProcessV2Request
+    from app.schemas.excel import ExcelProcessRequest
 
-    parsed = ExcelProcessV2Request.model_validate(request)
+    parsed = ExcelProcessRequest.model_validate(request)
     payload = parsed.model_dump(by_alias=True)
     _infer_electric_damper_statuses(parsed, payload["testContents"])
 
@@ -186,7 +186,7 @@ def test_manual_fire_damper_status_selects_its_own_rule() -> None:
             return self.rules
 
     for status in ("动作状态", "动作反馈"):
-        item = V2TestContent(
+        item = FormalTestContent(
             sortIndex=1,
             generatedContent=f"站厅A端防火阀FP1-A4{status}",
             equipmentChinese="站厅A端防火阀FP1-A4",
@@ -198,3 +198,5 @@ def test_manual_fire_damper_status_selects_its_own_rule() -> None:
         )
         steps = _catalog_steps(item, _ManualCatalog(rules))  # type: ignore[arg-type]
         assert steps[0]["description"] == f"{status}步骤"
+
+

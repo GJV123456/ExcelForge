@@ -44,3 +44,4 @@ def test_database_backup_refuses_overwrite_or_source_target(tmp_path: Path) -> N
         backup_database(database_path, database_path)
 
     assert existing.read_bytes() == b"do not overwrite"
+

@@ -13,7 +13,7 @@ def _client(tmp_path: Path, **overrides: str | None) -> TestClient:
     return TestClient(
         create_app(
             Settings(
-                mode="mock",
+                mode="formal",
                 database_path=tmp_path / "catalog.sqlite3",
                 auth_username=overrides.get("auth_username"),
                 auth_password=overrides.get("auth_password"),
@@ -178,3 +178,5 @@ def test_registered_account_is_persisted_and_reloaded_from_sqlite(tmp_path: Path
             },
         )
     assert login.status_code == 200
+
+
