@@ -308,8 +308,12 @@ def test_equipment_hierarchy_can_be_edited_and_deletes_are_protected(
                 ],
             },
         )
-        assert rename.status_code == 409
+        assert rename.status_code == 200
         assert rule["equipmentStatus"] == "保留状态"
+        refreshed_rule = client.get(
+            f"/api/catalog/test-contents/{rule['id']}"
+        ).json()["data"]
+        assert refreshed_rule["equipmentSubtype"] == "不能重命名"
 
 
 def test_subtype_and_status_rules_are_independent(tmp_path: Path) -> None:

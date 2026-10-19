@@ -80,6 +80,20 @@ export function deriveEquipmentClassification(input) {
   return result
 }
 
+// Some T19 source sheets contain two consecutive FF2 rows for the same
+// electric fire damper but omit the status/action column.  The first row is
+// the field action feedback and the second row is the FAS close command.  The
+// workspace supplies the occurrence index so this legacy input can still be
+// routed to two separate catalog rules.  Explicitly parsed statuses always
+// take precedence.
+export function inferElectricDamperStatus(classification, occurrenceIndex) {
+  if (classification?.equipmentSubtype !== '电动防火阀') return classification?.equipmentStatus || ''
+  const status = normalize(classification?.equipmentStatus)
+  if (status && status !== 'FF2') return status
+  if (!Number.isInteger(occurrenceIndex) || occurrenceIndex < 0) return status
+  return occurrenceIndex % 2 === 0 ? '动作状态' : '关控制命令'
+}
+
 export function extractIntervalName(content) {
   return normalize(content).match(intervalNamePattern)?.[1] || ''
 }

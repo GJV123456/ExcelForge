@@ -63,11 +63,10 @@ def test_v2_generates_deterministic_five_sheet_workbook() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/vnd.ms-excel"
-    encoded_prefix = (
-        "%E6%9C%80%E7%BB%88%E5%AF%BC%E5%85%A5%E8%A1%A8_"
-        "%E8%A7%92%E6%B1%9F%E8%B7%AF%E7%AB%99_"
-    )
-    assert encoded_prefix in response.headers["content-disposition"]
+    disposition = response.headers["content-disposition"]
+    assert "T19-" in disposition
+    assert "_202" in disposition
+    assert "%E5%AF%BC%E5%85%A5%E7%89%88V1.xls" in disposition
     assert response.content.startswith(bytes.fromhex("D0CF11E0A1B11AE1"))
     assert file_sha256(DEFAULT_TEMPLATE_PATH) == source_hash
 
@@ -203,7 +202,63 @@ def test_v2_filename_contains_station_timestamp_and_unique_types() -> None:
         generated_at=datetime(2026, 8, 12, 9, 8, 7),
     )
 
-    assert result.filename == "最终导入表_角江路站_烟感_温感_20260812090807.xls"
+    assert result.filename == "T19-角江路站-01-FAS设备信息监视-烟感和温感_20260812_导入版V1.xls"
+
+
+def test_v2_filename_uses_canonical_source_filename_and_refreshes_date() -> None:
+    payload = _payload()
+    payload["sourceFilename"] = (
+        "T19-角江路站-03-FAS设备信息监视-吸气式主机_20251231_导入版V1.xls"
+    )
+    request = ExcelProcessV2Request.model_validate(payload)
+
+    result = process_formal_request(
+        request,
+        Settings(mode="formal", mock_delay_seconds=0),
+        generated_at=datetime(2026, 10, 19, 9, 8, 7),
+    )
+
+    assert result.filename == "T19-角江路站-03-FAS设备信息监视-吸气式主机_20261019_导入版V1.xls"
+
+
+def test_v2_filename_uses_station_telephone_subtype_even_when_source_name_conflicts() -> None:
+    payload = _payload()
+    payload["sourceFilename"] = (
+        "T19-角江路站-24-FAS设备信息监视-区间-消防电话和插孔电话_20251231_导入版V1.xls"
+    )
+    for item in payload["testContents"]:
+        item["equipmentType"] = "特殊模块"
+        item["equipmentSubtype"] = "站内电话"
+
+    request = ExcelProcessV2Request.model_validate(payload)
+    result = process_formal_request(
+        request,
+        Settings(mode="formal", mock_delay_seconds=0),
+        generated_at=datetime(2026, 10, 19, 9, 8, 7),
+    )
+
+    assert result.filename == (
+        "T19-角江路站-24-FAS设备信息监视-站内-消防电话和插孔电话_20261019_导入版V1.xls"
+    )
+
+
+def test_v2_writes_all_selected_stations_to_test_location_sheet() -> None:
+    payload = _payload()
+    payload["testLocation"]["stations"] = ["角江路站", "软件园站", "洪湾站"]
+    request = ExcelProcessV2Request.model_validate(payload)
+
+    result = process_formal_request(
+        request,
+        Settings(mode="formal", mock_delay_seconds=0),
+        generated_at=datetime(2026, 10, 19, 9, 8, 7),
+    )
+    workbook = xlrd.open_workbook(file_contents=result.content)
+    location = workbook.sheet_by_name("测试地点")
+
+    assert location.row_values(2) == ["站点", "", "角江路站", "角江路站"]
+    assert location.row_values(3) == ["站点", "", "软件园站", "软件园站"]
+    assert location.row_values(4) == ["站点", "", "洪湾站", "洪湾站"]
+    assert location.cell_value(5, 0) == "end"
 
 
 def test_v2_rejects_whitespace_only_text_and_discipline_delimiters() -> None:

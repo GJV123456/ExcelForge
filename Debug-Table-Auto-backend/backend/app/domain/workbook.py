@@ -11,6 +11,10 @@ class LocationRow:
     direction: str
     start_station: str
     end_station: str
+    # A station location can contain several selected stations.  The legacy
+    # start/end fields remain for the API and history contract; the writer
+    # expands this tuple into one row per station in the test-location sheet.
+    stations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,5 +1,12 @@
 // T19 联调项目专属关键字和分类规则。
 const matchedField = (value, aliases = [value]) => ({ value, aliases })
+const includesKeyword = (text, upperText, keyword) => {
+  const target = String(keyword || '').trim()
+  if (!target) return false
+  return /[a-z0-9]/i.test(target)
+    ? String(upperText || '').includes(target.toUpperCase())
+    : String(text || '').includes(target)
+}
 const rules = [
   { equipmentTypes: ['监视模块'], subtype: '吸气式主机', keywords: ['ASD'], fields: ['预警', '火警', '故障'] },
   {
@@ -190,7 +197,10 @@ const rules = [
   {
     equipmentTypes: ['特殊模块'],
     subtype: '区间电话',
-    match: ({ text }) => text.includes('区间插孔') && text.includes('消防电话插孔'),
+    // 轨行区的站台上/下行插孔属于区间电话，即使原始描述没有直接写“区间”。
+    match: ({ text }) =>
+      (text.includes('区间插孔') || text.includes('轨行区插孔')) &&
+      text.includes('消防电话插孔'),
     fields: []
   },
   {
@@ -227,7 +237,9 @@ const rules = [
   {
     equipmentTypes: ['防火阀'],
     subtype: '手动防火阀',
-    fields: [],
+    // 手动防火阀的不同资料版本分别使用“动作状态”和“动作反馈”。
+    // 两者都必须作为状态传给后端，不能再让所有手动防火阀共用一条无状态规则。
+    fields: ['动作状态', '动作反馈'],
     match: ({ code, text, upperText }) => code.includes('FF1') || code.includes('FP1') || includesKeyword(text, upperText, 'FF1') || includesKeyword(text, upperText, 'FP1')
   }
 ]

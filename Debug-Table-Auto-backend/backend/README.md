@@ -78,7 +78,7 @@ Endpoints currently available:
 - `POST /api/v2/excel/process` (formal workbook generation; rules may come from SQLite)
 
 The v1 endpoint remains unchanged and does not accept formal rule fields. To
-generate `最终导入表.xls`, set `EXCELFORGE_MODE=formal` before startup and use
+generate a formal import workbook, set `EXCELFORGE_MODE=formal` before startup and use
 the v2 endpoint. The frontend may include `operationSteps` for compatibility;
 when omitted, the backend resolves the fixed operation-step/result hierarchy
 from SQLite using `equipmentSubtype` first and `equipmentType` as a fallback.
@@ -87,8 +87,11 @@ and one enabled responsible discipline per result. Test styles and parameter
 formulas are not accepted; the formal workbook keeps `结果输出` column D empty
 and only writes `参数公式!A3=end`.
 
-Formal filenames use `最终导入表_站点_类型1_类型2_YYYYMMDDHHMMSS.xls`, with
-equipment types de-duplicated in first-appearance order. Source runs use the
+Formal filenames use `T19-站点-编号-功能-设备具体类型_YYYYMMDD_导入版V1.xls`.
+The uploaded source filename supplies the canonical number/function/device
+description when it already follows the project naming convention; otherwise
+the backend uses the T19 device profile. A station selection with several
+stations writes one row per station on `测试地点`. Source runs use the
 repository template. A packaged executable instead expects
 `联调测试表导入模版.xls` in the same directory as the executable unless
 `EXCELFORGE_TEMPLATE_PATH` is set.

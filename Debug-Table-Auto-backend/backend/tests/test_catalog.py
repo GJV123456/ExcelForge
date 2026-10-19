@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.db.catalog import SCHEMA_VERSION
+from app.db.catalog import SCHEMA_VERSION, CatalogRepository
 from app.main import create_app
 
 
@@ -250,6 +250,71 @@ def test_catalog_upgrades_existing_v1_database_without_losing_rules(tmp_path: Pa
     assert preserved == "保留"
 
 
+def test_catalog_migrates_t19_door_release_names_to_door_access(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    repository = CatalogRepository(database_path)
+    repository.ensure_schema()
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DELETE FROM schema_migrations WHERE version = 9")
+        connection.executemany(
+            "INSERT INTO equipment_types(code, name, integration_code) VALUES (?, ?, 'T19')",
+            [
+                ("MONITOR", "监视模块"),
+                ("CONTROL", "控制模块"),
+                ("DOOR", "门禁释放"),
+            ],
+        )
+        parent_ids = dict(connection.execute(
+            "SELECT name, id FROM equipment_types WHERE name IN ('监视模块', '控制模块')"
+        ).fetchall())
+        connection.executemany(
+            "INSERT INTO equipment_type_subtypes(parent_equipment_type_id, code, name) "
+            "VALUES (?, ?, '门禁释放')",
+            [
+                (parent_ids["监视模块"], "MONITOR_DOOR"),
+                (parent_ids["控制模块"], "CONTROL_DOOR"),
+            ],
+        )
+        door_type_id = connection.execute(
+            "SELECT id FROM equipment_types WHERE code = 'DOOR'"
+        ).fetchone()[0]
+        connection.execute(
+            "INSERT INTO test_contents(code, equipment_type_id, content, equipment_subtype, integration_code) "
+            "VALUES ('DOOR_RULE', ?, '门禁规则', '门禁释放', 'T19')",
+            (door_type_id,),
+        )
+        test_content_id = connection.execute(
+            "SELECT id FROM test_contents WHERE code = 'DOOR_RULE'"
+        ).fetchone()[0]
+        connection.execute(
+            "INSERT INTO test_content_selectors(test_content_id, equipment_type, equipment_subtype) "
+            "VALUES (?, '监视模块', '门禁释放')",
+            (test_content_id,),
+        )
+
+    repository.ensure_schema()
+    with sqlite3.connect(database_path) as connection:
+        renamed_type = connection.execute(
+            "SELECT name FROM equipment_types WHERE code = 'DOOR'"
+        ).fetchone()[0]
+        renamed_children = connection.execute(
+            "SELECT COUNT(*) FROM equipment_type_subtypes WHERE name = '门禁'"
+        ).fetchone()[0]
+        renamed_rule_subtype = connection.execute(
+            "SELECT equipment_subtype FROM test_contents WHERE code = 'DOOR_RULE'"
+        ).fetchone()[0]
+        renamed_selector = connection.execute(
+            "SELECT equipment_type, equipment_subtype FROM test_content_selectors "
+            "WHERE test_content_id = ?",
+            (test_content_id,),
+        ).fetchone()
+
+    assert renamed_type == "门禁"
+    assert renamed_children == 2
+    assert renamed_rule_subtype == "门禁"
+    assert tuple(renamed_selector) == ("监视模块", "门禁")
+
+
 def test_catalog_returns_enabled_nested_rules_in_database_order(tmp_path: Path) -> None:
     database_path = tmp_path / "catalog.sqlite3"
     with _client(database_path) as client:
@@ -314,10 +379,13 @@ def test_catalog_can_include_disabled_records_explicitly(tmp_path: Path) -> None
         "触发设备报警",
     ]
     enabled_step = contents[0]["operationSteps"][1]
+    assert contents[0]["operationSteps"][0]["isEnabled"] is False
+    assert enabled_step["isEnabled"] is True
     assert [result["description"] for result in enabled_step["results"]] == [
         "系统正确显示报警",
         "停用结果",
     ]
+    assert enabled_step["results"][1]["isEnabled"] is False
     assert [
         discipline["code"]
         for discipline in enabled_step["results"][0]["responsibleDisciplines"]
@@ -349,6 +417,74 @@ def test_equipment_hierarchy_returns_parent_and_subtypes(tmp_path: Path) -> None
     parent = next(item for item in response.json()["data"] if item["name"] == "防火阀")
     assert [item["name"] for item in parent["subtypes"]] == ["手动防火阀"]
     assert subtype_response.json()["meta"] == {"count": 1}
+
+
+def test_renaming_equipment_subtype_updates_existing_rule_references(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with _client(database_path) as client:
+        client.get("/api/catalog/test-contents")
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "INSERT INTO equipment_types(id, code, name) VALUES (10, 'GAS', '特殊模块')"
+            )
+            connection.execute(
+                """
+                INSERT INTO equipment_type_subtypes(
+                    id, parent_equipment_type_id, code, name
+                ) VALUES (20, 10, 'GAS_TEST', '气灭测试')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO test_contents(
+                    code, equipment_type_id, content, equipment_subtype
+                ) VALUES ('GAS_RULE', 10, '气灭测试步骤', '气灭测试')
+                """
+            )
+            rule_id = connection.execute(
+                "SELECT id FROM test_contents WHERE code = 'GAS_RULE'"
+            ).fetchone()[0]
+            connection.execute(
+                """
+                INSERT INTO test_content_selectors(
+                    test_content_id, equipment_type, equipment_subtype
+                ) VALUES (?, '特殊模块', '气灭测试')
+                """,
+                (rule_id,),
+            )
+
+        response = client.put(
+            "/api/catalog/equipment-types/10",
+            json={
+                "name": "特殊模块",
+                "description": "",
+                "sortOrder": 1,
+                "isEnabled": True,
+                "subtypes": [
+                    {
+                        "id": 20,
+                        "name": "气灭房功能测试",
+                        "sortOrder": 1,
+                        "isEnabled": True,
+                        "statuses": [],
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    with sqlite3.connect(database_path) as connection:
+        rule_subtype = connection.execute(
+            "SELECT equipment_subtype FROM test_contents WHERE code = 'GAS_RULE'"
+        ).fetchone()[0]
+        selector_subtype = connection.execute(
+            "SELECT equipment_subtype FROM test_content_selectors WHERE test_content_id = ?",
+            (rule_id,),
+        ).fetchone()[0]
+    assert rule_subtype == "气灭房功能测试"
+    assert selector_subtype == "气灭房功能测试"
 
 
 def test_catalog_detail_returns_one_rule_or_404(tmp_path: Path) -> None:

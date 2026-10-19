@@ -150,12 +150,19 @@ def _write_table(
 
 
 def _formal_rows(workbook: FormalWorkbook) -> tuple[list[list[str | int]], ...]:
-    location: list[list[str | int]] = [[
-        workbook.location.location_type,
-        workbook.location.direction,
-        workbook.location.start_station,
-        workbook.location.end_station,
-    ]]
+    location_stations = workbook.location.stations
+    if location_stations:
+        location = [
+            [workbook.location.location_type, workbook.location.direction, station, station]
+            for station in location_stations
+        ]
+    else:
+        location = [[
+            workbook.location.location_type,
+            workbook.location.direction,
+            workbook.location.start_station,
+            workbook.location.end_station,
+        ]]
     contents: list[list[str | int]] = [
         [content.generated_content] for content in workbook.test_contents
     ]

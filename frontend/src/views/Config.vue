@@ -31,7 +31,9 @@ import {
   createResultOutput,
   createRuleDraft,
   getBuiltinStatuses,
-  validateRuleDraft
+  validateRuleDraft,
+  inferRuleStatus,
+  selectorMatches
 } from '../utils/catalogRule'
 
 // 页面级状态：规则、责任专业分别加载，避免把接口数据直接改坏。
@@ -298,14 +300,14 @@ const ruleBelongsToEquipmentOption = (rule, option) => {
   const ruleType = rule.equipmentType || {}
   const ruleEquipmentTypeId = rule.equipmentTypeId ?? rule.equipment_type_id
   const ruleSubtype = rule.equipmentSubtype ?? rule.equipment_subtype ?? rule.subtype?.name ?? ''
-  const ruleStatus = rule.equipmentStatus ?? rule.equipment_status ?? rule.status ?? ''
+  const ruleStatus = rule.equipmentStatus ?? rule.equipment_status ?? rule.status ?? inferRuleStatus(rule)
   const sameParent = ruleType.id === option.parent.id
     || ruleType.code === option.parent.code
     || ruleEquipmentTypeId === option.parent.id
     || String(ruleEquipmentTypeId) === String(option.parent.id)
   if (sameParent) {
     if (!option.subtype) return true
-    if (ruleSubtype) return ruleSubtype === option.subtype.name
+    if (ruleSubtype) return selectorMatches(ruleSubtype, option.subtype.name)
     // 兼容旧数据：后端尚未回传 selector 时，用规则标题/编码中的关键词
     // 判断它属于哪个子类型，避免电动、手动规则全部混在一起。
     const searchable = compactCatalogText(`${rule.content || ''}${rule.code || ''}`)
@@ -499,18 +501,22 @@ const loadRules = async (equipmentCode, preferredRuleId = null) => {
   try {
     // 查询完整规则后在前端按“父类型/子类型”筛选。
     // 这样可以兼容历史上把子类型另存为顶层设备类型的规则。
-    const response = await getTestContents({ includeDisabled: false })
+    // Configuration needs the complete rule tree so a disabled step/result
+    // can be re-enabled after a refresh. Generation still queries the catalog
+    // with includeDisabled=false and therefore keeps using enabled nodes only.
+    const response = await getTestContents({ includeDisabled: true })
     const allRules = responseList(response).map((rule) => {
       const override = getRuleSelectorOverride(rule)
       return override ? { ...rule, ...override } : rule
     })
     const option = selectedEquipmentOption.value || equipmentOptions.value.find((item) => item.queryCode === equipmentCode)
     rules.value = prepareRulesForDisplay(allRules.filter((rule) => {
+      if (rule.isEnabled === false) return false
       if (!ruleBelongsToEquipmentOption(rule, option)) return false
       const ruleSubtype = rule.equipmentSubtype ?? rule.equipment_subtype ?? rule.subtype?.name ?? ''
-      const ruleStatus = rule.equipmentStatus ?? rule.equipment_status ?? rule.status ?? ''
-      if (selectedSubtypeName.value && ruleSubtype !== selectedSubtypeName.value) return false
-      if (selectedStatus.value && ruleStatus !== selectedStatus.value) return false
+      const ruleStatus = rule.equipmentStatus ?? rule.equipment_status ?? rule.status ?? inferRuleStatus(rule)
+      if (selectedSubtypeName.value && !selectorMatches(ruleSubtype, selectedSubtypeName.value)) return false
+      if (selectedStatus.value && !selectorMatches(ruleStatus, selectedStatus.value)) return false
       return true
     }))
     const preferred = rules.value.find((item) => item.id === preferredRuleId || item.uiKey === preferredRuleId)

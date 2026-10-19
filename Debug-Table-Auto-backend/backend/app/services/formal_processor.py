@@ -20,7 +20,7 @@ from app.schemas.excel_v2 import ExcelProcessV2Request, V2TestContent
 from app.services.excel_processor import XLS_MEDIA_TYPE, ProcessedFile
 from app.utils.xls_writer import build_formal_workbook
 
-FORMAL_FILENAME_PREFIX = "最终导入表"
+FORMAL_FILENAME_SUFFIX = "导入版V1"
 ALLOWED_LOCATION_TYPES = frozenset({"全线", "区间", "站点"})
 ALLOWED_DIRECTIONS = frozenset({"上行", "下行"})
 MAX_BIFF8_DATA_ROWS = 65_533
@@ -85,17 +85,17 @@ def _build_location(request: ExcelProcessV2Request) -> LocationRow:
                 "STATION_ENDPOINTS_MISMATCH",
                 path=["testLocation", "endStation"],
             )
-        if location.stations:
-            stations = tuple(
-                _require_text(value, ["testLocation", "stations"]) for value in location.stations
+        stations = tuple(
+            _require_text(value, ["testLocation", "stations"])
+            for value in (location.stations or [start_station])
+        )
+        if stations[0] != start_station:
+            raise BusinessError(
+                "站点类型的 startStation 必须与 stations 首项一致",
+                "STATION_LIST_MISMATCH",
+                path=["testLocation", "stations"],
             )
-            if stations[0] != start_station:
-                raise BusinessError(
-                    "站点类型的 startStation 必须与 stations 首项一致",
-                    "STATION_LIST_MISMATCH",
-                    path=["testLocation", "stations"],
-                )
-        return LocationRow(location_type, "", start_station, end_station)
+        return LocationRow(location_type, "", start_station, end_station, stations)
 
     direction = location.direction.strip()
     if direction and direction not in ALLOWED_DIRECTIONS:
@@ -111,11 +111,11 @@ def _build_location(request: ExcelProcessV2Request) -> LocationRow:
                 "LINE_LOCATION_STATIONS_NOT_ALLOWED",
                 path=["testLocation"],
             )
-        return LocationRow(location_type, direction, "", "")
+        return LocationRow(location_type, direction, "", "", ())
 
     start_station = _require_text(location.start_station, ["testLocation", "startStation"])
     end_station = _require_text(location.end_station, ["testLocation", "endStation"])
-    return LocationRow(location_type, direction, start_station, end_station)
+    return LocationRow(location_type, direction, start_station, end_station, ())
 
 
 def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[dict[str, object]]:
@@ -154,7 +154,10 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
             ]
             if generic_candidates:
                 candidates = generic_candidates
-            elif any(str(candidate.get("equipmentSubtype", "")).strip() for candidate in candidates):
+            elif any(
+                str(candidate.get("equipmentSubtype", "")).strip()
+                for candidate in candidates
+            ):
             # Do not fall through to another subtype under the same broad
             # equipment type. That can turn an unsupported ASD reset into an
             # unrelated 400V cutoff rule, for example.
@@ -184,6 +187,18 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
         ),
         None,
     )
+    # Manual fire-damper workbooks from older revisions omit the signal/status
+    # column.  Keep those rows on the legacy status-less rule while explicit
+    # “动作状态”/“动作反馈” rows use the cloned status-specific rules above.
+    if selected is None and not equipment_status and equipment_subtype == "手动防火阀":
+        selected = next(
+            (
+                candidate
+                for candidate in candidates
+                if not str(candidate.get("equipmentStatus", "")).strip()
+            ),
+            None,
+        )
     if selected is None and direction:
         selected = next(
             (
@@ -232,7 +247,10 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
             and any(content in value for value in source_values)
         ]
         if content_matches:
-            longest_content = max(len(str(candidate["content"]).strip()) for candidate in content_matches)
+            longest_content = max(
+                len(str(candidate["content"]).strip())
+                for candidate in content_matches
+            )
             best_matches = [
                 candidate
                 for candidate in content_matches
@@ -281,6 +299,44 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
     return steps
 
 
+def _infer_electric_damper_statuses(
+    request: ExcelProcessV2Request, contents: list[dict[str, object]]
+) -> None:
+    """Recover the two statuses omitted by the legacy FF2 source sheet.
+
+    The original fire-damper workbook emits two consecutive rows for each
+    FF2 device.  It has no signal/status column, so both rows arrive with the
+    same FF2 fallback marker.  The catalog rules are intentionally separate:
+    first row = field action feedback, second row = FAS close command.
+    Explicit status text always wins over this positional compatibility rule.
+    """
+    occurrences: dict[str, int] = {}
+    for index, item in enumerate(request.test_contents):
+        subtype = item.equipment_subtype.strip()
+        source = " ".join(_source_values(item)).casefold()
+        is_electric_damper = subtype == "电动防火阀" or (
+            item.equipment_type.strip() == "防火阀"
+            and "ff2" in item.equipment_code.casefold()
+        )
+        if not is_electric_damper:
+            continue
+        key = (
+            item.equipment_code.strip().casefold()
+            or item.equipment_chinese.strip().casefold()
+            or item.generated_content.strip().casefold()
+        )
+        occurrence = occurrences.get(key, 0)
+        occurrences[key] = occurrence + 1
+        current_status = item.equipment_status.strip()
+        if current_status and current_status != "FF2":
+            continue
+        if "动作状态" in source or "关控制命令" in source:
+            continue
+        contents[index]["equipmentStatus"] = (
+            "动作状态" if occurrence % 2 == 0 else "关控制命令"
+        )
+
+
 def prepare_formal_request(
     request: ExcelProcessV2Request, settings: Settings
 ) -> ExcelProcessV2Request:
@@ -296,10 +352,17 @@ def prepare_formal_request(
     payload = request.model_dump(by_alias=True)
     contents = payload["testContents"]
     assert isinstance(contents, list)
+    _infer_electric_damper_statuses(request, contents)
     for index, content in enumerate(request.test_contents):
         if content.operation_steps:
             continue
-        contents[index]["operationSteps"] = _catalog_steps(content, repository)
+        resolved_content = content
+        resolved_status = str(contents[index].get("equipmentStatus", "")).strip()
+        if resolved_status != content.equipment_status.strip():
+            resolved_content = content.model_copy(
+                update={"equipment_status": resolved_status}
+            )
+        contents[index]["operationSteps"] = _catalog_steps(resolved_content, repository)
     return ExcelProcessV2Request.model_validate(payload)
 
 
@@ -396,22 +459,117 @@ def _filename_component(value: str) -> str:
     return cleaned or "未命名"
 
 
-def _formal_filename(workbook: FormalWorkbook, generated_at: datetime) -> str:
-    location = workbook.location.start_station or workbook.location.location_type
+_CANONICAL_FILENAME_PATTERN = re.compile(
+    r"^(?P<project>[^-]+)-(?P<station>.+?)-(?P<number>\d{2})-"
+    r"(?P<function>.+?)-(?P<device>.+?)_(?:\d{8})(?:\d{6})?_导入版V1$"
+)
+
+_FILENAME_PROFILES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    ("01", "FAS设备信息监视", "烟感和温感", ("烟感和温感", "烟感", "温感")),
+    ("02", "FAS设备信息监视", "区间手消报", ("区间手消报",)),
+    ("02", "FAS设备信息监视", "手报和消火栓", ("手报和消火栓",)),
+    ("03", "FAS设备信息监视", "吸气式主机", ("吸气式主机", "ASD")),
+    ("04", "FAS设备信息监视", "感温电缆", ("感温电缆",)),
+    ("05", "FAS设备信息监视", "感温光纤", ("感温光纤",)),
+    ("06", "外部接口测试", "AFC", ("AFC",)),
+    ("07", "外部接口测试", "EPS", ("EPS",)),
+    ("08", "外部接口测试", "垂梯", ("垂直电梯", "垂梯")),
+    ("09", "外部接口测试", "电动防火阀", ("电动防火阀",)),
+    ("09", "外部接口测试", "手动防火阀", ("手动防火阀",)),
+    ("10", "外部接口测试", "防火卷帘", ("防火卷帘",)),
+    ("11", "外部接口测试", "专用消防风机", ("专用消防风机", "排烟机", "加压送风机")),
+    ("12", "外部接口测试", "风机连锁风阀", ("风机连锁风阀", "风阀")),
+    ("13", "外部接口测试", "400V切非", ("400V切非", "切非")),
+    ("14", "外部接口测试", "声光报警器", ("声光报警器", "声光")),
+    ("15", "外部接口测试", "消防泵", ("消防泵",)),
+    ("16", "外部接口测试", "PA", ("广播交替模块", "PA")),
+    ("17", "外部接口测试", "防火门", ("防火门",)),
+    ("18", "外部接口测试", "门禁释放", ("门禁释放", "门禁")),
+    (
+        "19",
+        "外部接口测试",
+        "电气火灾、消防电源、应急疏散",
+        ("电气火灾、消防电源、应急疏散", "电气火灾"),
+    ),
+    ("20", "气灭房间功能测试", "", ("气灭房间功能测试", "气灭房间", "气灭测试")),
+    ("22", "外部接口测试", "消火栓点灯", ("消火栓按钮点灯", "消火栓点灯")),
+    ("23", "FAS设备信息监视", "主机手自动、人工确认等", ("主机手自动", "人工确认", "人工确定按钮")),
+    ("24", "FAS设备信息监视", "区间-消防电话和插孔电话", ("区间-消防电话和插孔电话", "区间电话")),
+    ("24", "FAS设备信息监视", "站内-消防电话和插孔电话", ("站内-消防电话和插孔电话", "站内电话")),
+)
+
+
+def _filename_source_text(request: ExcelProcessV2Request) -> str:
+    return " ".join(
+        value.strip()
+        for value in (
+            request.source_filename,
+            *(content.generated_content for content in request.test_contents),
+            *(content.equipment_chinese for content in request.test_contents),
+            *(content.equipment_subtype for content in request.test_contents),
+            *(content.equipment_type for content in request.test_contents),
+        )
+        if value and value.strip()
+    )
+
+
+def _filename_profile(request: ExcelProcessV2Request) -> tuple[str, str, str]:
+    # The classified subtype is the most reliable signal for telephone
+    # workbooks. Other rows or the uploaded workbook's old canonical filename
+    # can mention both station and interval terminology.
+    classified_subtypes = {
+        content.equipment_subtype.strip()
+        for content in request.test_contents
+        if content.equipment_subtype.strip()
+        in {"区间电话", "站内电话"}
+    }
+    if len(classified_subtypes) == 1:
+        subtype = next(iter(classified_subtypes))
+        if subtype == "站内电话":
+            return "24", "FAS设备信息监视", "站内-消防电话和插孔电话"
+        return "24", "FAS设备信息监视", "区间-消防电话和插孔电话"
+
+    source_stem = re.sub(r"\.[^.\\/]+$", "", request.source_filename.strip())
+    canonical = _CANONICAL_FILENAME_PATTERN.match(source_stem)
+    if canonical:
+        device = re.sub(r"^(?:设计新增|新增)-", "", canonical.group("device"))
+        return (
+            canonical.group("number"),
+            canonical.group("function"),
+            device,
+        )
+
+    source_text = _filename_source_text(request)
+    for number, function, device, keywords in _FILENAME_PROFILES:
+        if any(keyword.casefold() in source_text.casefold() for keyword in keywords):
+            return number, function, device
     equipment_types = tuple(
         dict.fromkeys(
-            content.equipment_type.strip()
-            for content in workbook.test_contents
-            if content.equipment_type.strip()
+            content.equipment_subtype.strip() or content.equipment_type.strip()
+            for content in request.test_contents
+            if (content.equipment_subtype.strip() or content.equipment_type.strip())
         )
     )
+    device = "和".join(equipment_types) if equipment_types else "未命名"
+    function = "FAS设备信息监视" if "监视模块" in source_text else "外部接口测试"
+    return "00", function, device
+
+
+def _formal_filename(
+    request: ExcelProcessV2Request, workbook: FormalWorkbook, generated_at: datetime
+) -> str:
+    station = workbook.location.stations[0] if workbook.location.stations else (
+        workbook.location.start_station or workbook.location.location_type
+    )
+    number, function, device = _filename_profile(request)
     components = [
-        FORMAL_FILENAME_PREFIX,
-        _filename_component(location),
-        *(_filename_component(value) for value in equipment_types),
-        generated_at.strftime("%Y%m%d%H%M%S"),
+        _filename_component(request.integration_code),
+        _filename_component(station),
+        number,
+        _filename_component(function),
+        _filename_component(device),
     ]
-    return "_".join(components) + ".xls"
+    return "-".join(components) + f"_{generated_at.strftime('%Y%m%d')}_{FORMAL_FILENAME_SUFFIX}.xls"
 
 
 def process_formal_request(
@@ -426,5 +584,7 @@ def process_formal_request(
     request = prepare_formal_request(request, settings)
     workbook = _build_workbook(request)
     content = build_formal_workbook(workbook, settings.template_path)
-    filename = _formal_filename(workbook, generated_at or datetime.now().astimezone())
+    filename = _formal_filename(
+        request, workbook, generated_at or datetime.now().astimezone()
+    )
     return ProcessedFile(content=content, filename=filename, media_type=XLS_MEDIA_TYPE)

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildTestContentPayload, createRuleDraft, validateRuleDraft } from '../src/utils/catalogRule.js'
+import {
+  buildTestContentPayload,
+  createRuleDraft,
+  selectorMatches,
+  validateRuleDraft
+} from '../src/utils/catalogRule.js'
 
 test('turns API rule data into an editable draft', () => {
   const draft = createRuleDraft({
@@ -59,4 +64,10 @@ test('validates the minimum rule tree constraints', () => {
 
   draft.operationSteps[0].results[0].responsibleDisciplineIds = [1]
   assert.equal(validateRuleDraft(draft), '')
+})
+
+test('matches saved rules by normalized subtype and status selectors', () => {
+  assert.equal(selectorMatches('防火阀/电动防火阀', '电动防火阀'), true)
+  assert.equal(selectorMatches('防火阀/电动防火阀/动作状态', '动作状态'), true)
+  assert.equal(selectorMatches('关控制命令', '动作状态'), false)
 })

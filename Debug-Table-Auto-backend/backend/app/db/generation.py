@@ -323,7 +323,8 @@ class GenerationRepository:
         with closing(self.database._connect()) as connection, connection:
             if integration_code:
                 row = connection.execute(
-                    "SELECT filename, output_blob FROM generation_runs WHERE id = ? AND integration_code = ?",
+                    "SELECT filename, output_blob FROM generation_runs "
+                    "WHERE id = ? AND integration_code = ?",
                     (generation_id, integration_code.strip().upper()),
                 ).fetchone()
             else:

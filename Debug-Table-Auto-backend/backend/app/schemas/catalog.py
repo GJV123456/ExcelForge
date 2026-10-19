@@ -84,6 +84,7 @@ class ResultOutputItem(TypedDict):
     id: int
     description: str
     sortOrder: int
+    isEnabled: bool
     responsibleDisciplines: list[DisciplineItem]
 
 
@@ -92,6 +93,7 @@ class OperationStepItem(TypedDict):
     description: str
     ratioChange: str
     sortOrder: int
+    isEnabled: bool
     results: list[ResultOutputItem]
 
 

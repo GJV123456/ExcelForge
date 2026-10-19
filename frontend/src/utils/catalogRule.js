@@ -1,7 +1,7 @@
 const text = (value) => typeof value === 'string' ? value : ''
 const firstText = (...values) => values.find((value) => typeof value === 'string') || ''
 const compact = (value) => String(value ?? '').replace(/[\s\u3000]/g, '').toLocaleLowerCase()
-const inferRuleStatus = (rule) => {
+export const inferRuleStatus = (rule) => {
   const stepText = (rule.operationSteps || []).flatMap((step) => [
     step.description,
     ...(step.results || []).map((result) => result.description)
@@ -9,9 +9,22 @@ const inferRuleStatus = (rule) => {
   const searchable = compact(`${rule.content || ''} ${rule.code || ''} ${stepText}`)
   const knownStatuses = [
     '预警', '火警', '故障', '远程复位', '远方复归', '报警反馈', '故障反馈',
+    '动作状态', '动作反馈', '关控制命令',
     '感温光纤综合故障', '区间上行感温光纤报警反馈', '区间下行感温光纤报警反馈'
   ]
   return knownStatuses.find((status) => searchable.includes(compact(status))) || ''
+}
+
+// Catalog responses from older backends may return selectors with a parent
+// prefix (for example “防火阀/电动防火阀/动作状态”), while the editor stores
+// the leaf value (“动作状态”).  Compare normalized leaf selectors so a saved
+// rule remains visible after the page reloads.
+export const selectorMatches = (actual, expected) => {
+  const left = compact(actual)
+  const right = compact(expected)
+  if (!right) return true
+  if (!left) return false
+  return left === right || left.endsWith(right) || right.endsWith(left)
 }
 
 const BUILTIN_STATUS_MAP = {
@@ -24,7 +37,7 @@ const BUILTIN_STATUS_MAP = {
   '监视模块/防火卷帘': ['防火卷帘一次降落反馈', '防火卷帘一次降落控制', '防火卷帘二次降落反馈', '防火卷帘二次降落控制'],
   '监视模块/400V切非': ['切非反馈'],
   '监视模块/消防泵': ['消防泵手/自动反馈', '消防泵动作反馈', '消防泵故障反馈', '压力开关动作反馈', '流量开关动作反馈', '高水位报警反馈', '低水位报警反馈', '最低水位报警反馈', '稳压泵动作反馈', '稳压泵故障反馈', '消防泵启动控制', '巡检柜报警反馈', '信号阀动作反馈', '水流指示器动作反馈'],
-  '监视模块/门禁释放': ['门禁释放反馈', '门禁释放'],
+  '监视模块/门禁': ['门禁释放反馈', '门禁释放'],
   '监视模块/电气火灾、消防电源、应急疏散': ['电气火灾监控报警', '电气火灾监控故障反馈', '消防电源监控系统报警', '消防电源监控系统故障反馈', '应急照明及疏散指示系统状态反馈', '应急照明及疏散指示系统模式控制'],
   '控制模块/吸气式主机': ['远程复位'],
   '控制模块/感温电缆': ['报警反馈', '故障反馈', '远程复位'],
@@ -34,12 +47,13 @@ const BUILTIN_STATUS_MAP = {
   '控制模块/防火卷帘': ['防火卷帘一次降落反馈', '防火卷帘一次降落控制', '防火卷帘二次降落反馈', '防火卷帘二次降落控制'],
   '控制模块/400V切非': ['切非'],
   '控制模块/消防泵': ['消防泵手/自动反馈', '消防泵动作反馈', '消防泵故障反馈', '压力开关动作反馈', '流量开关动作反馈', '高水位报警反馈', '低水位报警反馈', '最低水位报警反馈', '稳压泵动作反馈', '稳压泵故障反馈', '消防泵启动控制', '巡检柜报警反馈', '信号阀动作反馈', '水流指示器动作反馈'],
-  '控制模块/门禁释放': ['门禁释放反馈', '门禁释放'],
+  '控制模块/门禁': ['门禁释放反馈', '门禁释放'],
   '控制模块/电气火灾、消防电源、应急疏散': ['电气火灾监控报警', '电气火灾监控故障反馈', '消防电源监控系统报警', '消防电源监控系统故障反馈', '应急照明及疏散指示系统状态反馈', '应急照明及疏散指示系统模式控制'],
   '控制模块/主机手自动、人工确认': ['FAS主机人工确定按钮', 'FAS主机自动状态按钮', '气灭主机自动状态按钮', 'FAS主机综合火警'],
   // 兼容数据库种子脚本曾使用的“等”后缀命名。
   '控制模块/主机手自动、人工确认等': ['FAS主机人工确定按钮', 'FAS主机自动状态按钮', '气灭主机自动状态按钮', 'FAS主机综合火警'],
   '防火阀/电动防火阀': ['动作状态', '关控制命令'],
+  '防火阀/手动防火阀': ['动作状态', '动作反馈'],
   '排烟机': ['运行状态', '手自动切换状态', '开启控制命令'],
   '加压送风机': ['运行状态', '手自动切换状态', '开启控制命令']
 }

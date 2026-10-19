@@ -4,7 +4,7 @@ import pytest
 
 from app.exceptions import BusinessError
 from app.schemas.excel_v2 import V2TestContent
-from app.services.formal_processor import _catalog_steps
+from app.services.formal_processor import _catalog_steps, _infer_electric_damper_statuses
 
 
 class _CatalogStub:
@@ -124,3 +124,77 @@ def test_shared_generic_titles_select_exact_status_for_other_equipment(
     steps = _catalog_steps(item, _CatalogStub(rules))  # type: ignore[arg-type]
 
     assert steps[0]["description"] == f"步骤-{status}"
+
+
+def test_legacy_ff2_pair_gets_separate_electric_damper_statuses() -> None:
+    request = {
+        "integrationCode": "T19",
+        "testLocation": {
+            "type": "站点",
+            "direction": "",
+            "startStation": "角江路站",
+            "endStation": "角江路站",
+        },
+        "testContents": [
+            {
+                "sortIndex": index,
+                "generatedContent": "站厅B端公安通信设备室",
+                "equipmentChinese": "站厅B端公安通信设备室",
+                "equipmentCode": "FF2-B211",
+                "equipmentType": "防火阀",
+                "equipmentSubtype": "电动防火阀",
+                "equipmentStatus": "FF2",
+            }
+            for index in (1, 2)
+        ],
+    }
+    from app.schemas.excel_v2 import ExcelProcessV2Request
+
+    parsed = ExcelProcessV2Request.model_validate(request)
+    payload = parsed.model_dump(by_alias=True)
+    _infer_electric_damper_statuses(parsed, payload["testContents"])
+
+    assert [item["equipmentStatus"] for item in payload["testContents"]] == [
+        "动作状态",
+        "关控制命令",
+    ]
+
+
+def test_manual_fire_damper_status_selects_its_own_rule() -> None:
+    rules = [
+        {
+            "content": "防火阀",
+            "equipmentSubtype": "手动防火阀",
+            "equipmentStatus": status,
+            "operationSteps": [
+                {
+                    "description": f"{status}步骤",
+                    "ratioChange": "否",
+                    "results": [
+                        {
+                            "description": f"{status}结果",
+                            "responsibleDisciplines": [{"name": "自动化"}],
+                        }
+                    ],
+                }
+            ],
+        }
+        for status in ("动作状态", "动作反馈")
+    ]
+    class _ManualCatalog(_CatalogStub):
+        def list_test_contents(self, *, equipment_type: str) -> list[dict[str, object]]:
+            return self.rules
+
+    for status in ("动作状态", "动作反馈"):
+        item = V2TestContent(
+            sortIndex=1,
+            generatedContent=f"站厅A端防火阀FP1-A4{status}",
+            equipmentChinese="站厅A端防火阀FP1-A4",
+            signalDescription=status,
+            equipmentCode="FP1-A4",
+            equipmentType="防火阀",
+            equipmentSubtype="手动防火阀",
+            equipmentStatus=status,
+        )
+        steps = _catalog_steps(item, _ManualCatalog(rules))  # type: ignore[arg-type]
+        assert steps[0]["description"] == f"{status}步骤"

@@ -551,7 +551,7 @@ testLocation:{
   "equipmentCode": "FP1-B7",
   "equipmentType": "防火阀",
   "equipmentSubtype": "手动防火阀",
-  "equipmentStatus": ""
+  "equipmentStatus": "动作状态"
 }
 ```
 

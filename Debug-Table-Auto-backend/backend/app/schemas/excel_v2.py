@@ -54,5 +54,6 @@ class V2TestContent(ApiModel):
 
 class ExcelProcessV2Request(ApiModel):
     integration_code: IntegrationCode = Field(default="T19", alias="integrationCode")
+    source_filename: StrictText = Field(default="", alias="sourceFilename", max_length=512)
     test_location: TestLocation = Field(alias="testLocation")
     test_contents: Annotated[list[V2TestContent], Field(alias="testContents", min_length=1)]

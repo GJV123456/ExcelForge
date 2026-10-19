@@ -9,7 +9,7 @@ import ExcelPreview from '../components/ExcelPreview.vue'
 import LoadingDialog from '../components/LoadingDialog.vue'
 import { useExcelStore } from '../store/excel'
 import { buildContent, extractEquipmentCode } from '../utils/excelParser'
-import { deriveEquipmentClassification } from '../utils/equipmentSubtype'
+import { deriveEquipmentClassification, inferElectricDamperStatus } from '../utils/equipmentSubtype'
 import { downloadGeneration, getGeneration, getGenerations, processExcelV2 } from '../api/excel'
 import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
@@ -57,24 +57,42 @@ const defaultRuleFields = (headers = [], rows = []) => {
     ...(headers.includes('附加编号') ? [{ type: 'field', value: '附加编号', optional: true }] : [])
   ]
 }
-const baseTestContents = computed(() => excel.rows.map((row, index) => ({
-  equipmentChinese: row['设备中文'] || row['测试内容'] || '',
-  signalDescription: row['信号描述'] || '',
-  additionalCode: row['附加编号'] || '',
-  sortIndex: row.sortIndex || index + 1,
-  generatedContent: excel.excelType === 'B' ? buildContent(row, excel.rules) : (row['测试内容'] || '[空]'),
-  equipmentCode: excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || ''),
-  equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || ''),
-  ...deriveEquipmentClassification({
-    equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || ''),
-    equipmentCode: excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || ''),
-    equipmentChinese: row['设备中文'] || row['测试内容'] || '',
-    signalDescription: row['信号描述'] || '',
-    testContent: excel.excelType === 'A' ? (row['测试内容'] || '') : buildContent(row, excel.rules),
-    integrationCode: selectedIntegration.value,
-    classificationProfile: selectedProject.value?.classificationProfile
+const baseTestContents = computed(() => {
+  const damperOccurrences = new Map()
+  return excel.rows.map((row, index) => {
+    const equipmentCode = excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || '')
+    const equipmentType = excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || '')
+    const equipmentChinese = row['设备中文'] || row['测试内容'] || ''
+    const signalDescription = row['信号描述'] || ''
+    const testContent = excel.excelType === 'A' ? (row['测试内容'] || '') : buildContent(row, excel.rules)
+    const classification = deriveEquipmentClassification({
+      equipmentType,
+      equipmentCode,
+      equipmentChinese,
+      signalDescription,
+      testContent,
+      integrationCode: selectedIntegration.value,
+      classificationProfile: selectedProject.value?.classificationProfile
+    })
+    const damperKey = String(equipmentCode || equipmentChinese || testContent).trim().toUpperCase()
+    const occurrenceIndex = classification.equipmentSubtype === '电动防火阀'
+      ? (damperOccurrences.get(damperKey) || 0)
+      : -1
+    if (classification.equipmentSubtype === '电动防火阀') damperOccurrences.set(damperKey, occurrenceIndex + 1)
+    const equipmentStatus = inferElectricDamperStatus(classification, occurrenceIndex)
+    return {
+      equipmentChinese,
+      signalDescription,
+      additionalCode: row['附加编号'] || '',
+      sortIndex: row.sortIndex || index + 1,
+      generatedContent: excel.excelType === 'B' ? buildContent(row, excel.rules) : (row['测试内容'] || '[空]'),
+      equipmentCode,
+      equipmentType,
+      ...classification,
+      ...(equipmentStatus ? { equipmentStatus } : {})
+    }
   })
-})))
+})
 const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName }) => ({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName })))
 
 watch(preview, (value) => excel.setPreview(value), { immediate: true })
@@ -156,7 +174,12 @@ const submit = async () => {
   const testContents = baseTestContents.value
   loading.value = true
   try {
-    const response = await processExcelV2({ integrationCode: selectedIntegration.value, testLocation: buildTestLocation(location), testContents })
+    const response = await processExcelV2({
+      integrationCode: selectedIntegration.value,
+      sourceFilename: excel.file?.name || '',
+      testLocation: buildTestLocation(location),
+      testContents
+    })
     if (!response.data || response.data.size === 0) throw Object.assign(new Error('empty file'), { publicMessage: '文件生成失败' })
     downloadResponseBlob(response)
     await loadHistory()

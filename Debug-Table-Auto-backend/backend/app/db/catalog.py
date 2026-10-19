@@ -28,7 +28,7 @@ from app.schemas.catalog import (
     TestContentWriteRequest,
 )
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 _BUILTIN_PARENT_STATUSES: dict[str, list[str]] = {
     "排烟机": ["运行状态", "手自动切换状态", "开启控制命令"],
@@ -37,6 +37,7 @@ _BUILTIN_PARENT_STATUSES: dict[str, list[str]] = {
 
 _BUILTIN_SUBTYPE_STATUSES: dict[tuple[str, str], list[str]] = {
     ("防火阀", "电动防火阀"): ["动作状态", "关控制命令"],
+    ("防火阀", "手动防火阀"): ["动作状态", "动作反馈"],
     ("监视模块", "吸气式主机"): ["预警", "火警", "故障"],
     ("控制模块", "吸气式主机"): ["远程复位"],
     ("监视模块", "感温电缆"): ["报警反馈", "故障反馈", "远程复位"],
@@ -54,8 +55,8 @@ _BUILTIN_SUBTYPE_STATUSES: dict[tuple[str, str], list[str]] = {
     ("控制模块", "400V切非"): ["切非"],
     ("监视模块", "消防泵"): ["消防泵手/自动反馈", "消防泵动作反馈", "消防泵故障反馈", "压力开关动作反馈", "流量开关动作反馈", "高水位报警反馈", "低水位报警反馈", "最低水位报警反馈", "稳压泵动作反馈", "稳压泵故障反馈", "消防泵启动控制", "巡检柜报警反馈", "信号阀动作反馈", "水流指示器动作反馈"],
     ("控制模块", "消防泵"): ["消防泵手/自动反馈", "消防泵动作反馈", "消防泵故障反馈", "压力开关动作反馈", "流量开关动作反馈", "高水位报警反馈", "低水位报警反馈", "最低水位报警反馈", "稳压泵动作反馈", "稳压泵故障反馈", "消防泵启动控制", "巡检柜报警反馈", "信号阀动作反馈", "水流指示器动作反馈"],
-    ("监视模块", "门禁释放"): ["门禁释放反馈", "门禁释放"],
-    ("控制模块", "门禁释放"): ["门禁释放反馈", "门禁释放"],
+    ("监视模块", "门禁"): ["门禁释放反馈", "门禁释放"],
+    ("控制模块", "门禁"): ["门禁释放反馈", "门禁释放"],
     ("监视模块", "电气火灾、消防电源、应急疏散"): ["电气火灾监控报警", "电气火灾监控故障反馈", "消防电源监控系统报警", "消防电源监控系统故障反馈", "应急照明及疏散指示系统状态反馈", "应急照明及疏散指示系统模式控制"],
     ("控制模块", "电气火灾、消防电源、应急疏散"): ["电气火灾监控报警", "电气火灾监控故障反馈", "消防电源监控系统报警", "消防电源监控系统故障反馈", "应急照明及疏散指示系统状态反馈", "应急照明及疏散指示系统模式控制"],
     ("控制模块", "主机手自动、人工确认"): ["FAS主机人工确定按钮", "FAS主机自动状态按钮", "气灭主机自动状态按钮", "FAS主机综合火警"],
@@ -385,6 +386,193 @@ def _seed_builtin_statuses(connection: sqlite3.Connection) -> None:
             )
     connection.execute(
         "INSERT OR IGNORE INTO builtin_catalog_seed_markers(name) VALUES ('statuses-v1')"
+    )
+
+
+def _migrate_manual_fire_damper_status_rules(connection: sqlite3.Connection) -> None:
+    """Split the legacy manual fire-damper rule by its source status fields.
+
+    Older T19 databases contain one status-less manual fire-damper rule.  The
+    source workbooks use both ``动作状态`` and ``动作反馈``.  Keep the old rule
+    for rows without a status, and clone its enabled operation/result tree for
+    each explicit status so matching remains specific and deterministic.
+    """
+    required = {
+        "builtin_catalog_seed_markers",
+        "equipment_types",
+        "equipment_type_subtypes",
+        "equipment_subtype_statuses",
+        "test_contents",
+        "operation_steps",
+        "result_outputs",
+        "result_output_disciplines",
+    }
+    tables = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    if not required.issubset(tables):
+        return
+
+    marker = "manual-fire-damper-status-rules-v1"
+    parent = connection.execute(
+        "SELECT id FROM equipment_types WHERE name = '防火阀' COLLATE NOCASE "
+        "AND integration_code = 'T19' LIMIT 1"
+    ).fetchone()
+    if parent is None:
+        return
+    subtype = connection.execute(
+        """
+        SELECT id FROM equipment_type_subtypes
+        WHERE parent_equipment_type_id = ?
+          AND name = '手动防火阀' COLLATE NOCASE
+        LIMIT 1
+        """,
+        (int(parent["id"]),),
+    ).fetchone()
+    if subtype is None:
+        return
+
+    subtype_id = int(subtype["id"])
+    for sort_order, status in enumerate(("动作状态", "动作反馈"), start=1):
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO equipment_subtype_statuses(
+                equipment_subtype_id, name, sort_order, is_enabled
+            ) VALUES (?, ?, ?, 1)
+            """,
+            (subtype_id, status, sort_order),
+        )
+
+        exists = connection.execute(
+            """
+            SELECT id FROM test_contents
+            WHERE equipment_type_id = ?
+              AND equipment_subtype = '手动防火阀' COLLATE NOCASE
+              AND equipment_status = ? COLLATE NOCASE
+              AND integration_code = 'T19'
+            LIMIT 1
+            """,
+            (int(parent["id"]), status),
+        ).fetchone()
+        if exists is not None:
+            continue
+
+        generic = connection.execute(
+            """
+            SELECT * FROM test_contents
+            WHERE equipment_type_id = ?
+              AND equipment_subtype = '手动防火阀' COLLATE NOCASE
+              AND equipment_status = ''
+              AND integration_code = 'T19'
+            ORDER BY is_enabled DESC, sort_order, id
+            LIMIT 1
+            """,
+            (int(parent["id"]),),
+        ).fetchone()
+        if generic is None:
+            continue
+
+        code = (
+            "TYPE_FIRE_DAMPER_MANUAL_ACTION_STATUS"
+            if status == "动作状态"
+            else "TYPE_FIRE_DAMPER_MANUAL_ACTION_FEEDBACK"
+        )
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO test_contents(
+                code, equipment_type_id, content, description, revision,
+                sort_order, is_enabled, equipment_subtype, equipment_status,
+                integration_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'T19')
+            """,
+            (
+                code,
+                int(generic["equipment_type_id"]),
+                generic["content"],
+                generic["description"],
+                int(generic["revision"]),
+                int(generic["sort_order"]) + sort_order,
+                int(generic["is_enabled"]),
+                generic["equipment_subtype"],
+                status,
+            ),
+        )
+        cloned = connection.execute(
+            "SELECT id FROM test_contents WHERE code = ? COLLATE NOCASE LIMIT 1",
+            (code,),
+        ).fetchone()
+        if cloned is None:
+            continue
+        new_content_id = int(cloned["id"])
+        old_steps = connection.execute(
+            "SELECT * FROM operation_steps WHERE test_content_id = ? ORDER BY sort_order, id",
+            (int(generic["id"]),),
+        ).fetchall()
+        for old_step in old_steps:
+            connection.execute(
+                """
+                INSERT INTO operation_steps(
+                    test_content_id, description, ratio_change, sort_order,
+                    is_enabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_content_id,
+                    old_step["description"],
+                    old_step["ratio_change"],
+                    old_step["sort_order"],
+                    old_step["is_enabled"],
+                    old_step["created_at"],
+                    old_step["updated_at"],
+                ),
+            )
+            new_step_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
+            old_results = connection.execute(
+                "SELECT * FROM result_outputs WHERE operation_step_id = ? ORDER BY sort_order, id",
+                (int(old_step["id"]),),
+            ).fetchall()
+            for old_result in old_results:
+                connection.execute(
+                    """
+                    INSERT INTO result_outputs(
+                        operation_step_id, description, sort_order,
+                        is_enabled, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        new_step_id,
+                        old_result["description"],
+                        old_result["sort_order"],
+                        old_result["is_enabled"],
+                        old_result["created_at"],
+                        old_result["updated_at"],
+                    ),
+                )
+                new_result_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
+                disciplines = connection.execute(
+                    """
+                    SELECT discipline_id, sort_order
+                    FROM result_output_disciplines
+                    WHERE result_output_id = ?
+                    ORDER BY sort_order, discipline_id
+                    """,
+                    (int(old_result["id"]),),
+                ).fetchall()
+                connection.executemany(
+                    """
+                    INSERT OR IGNORE INTO result_output_disciplines(
+                        result_output_id, discipline_id, sort_order
+                    ) VALUES (?, ?, ?)
+                    """,
+                    ((new_result_id, row["discipline_id"], row["sort_order"]) for row in disciplines),
+                )
+
+    connection.execute(
+        "INSERT OR IGNORE INTO builtin_catalog_seed_markers(name) VALUES (?)",
+        (marker,),
     )
 
 
@@ -723,6 +911,92 @@ class CatalogRepository:
                     connection.execute(statement)
                 connection.execute("INSERT INTO schema_migrations(version) VALUES (8)")
                 current_version = 8
+            if current_version < 9:
+                existing_tables = {
+                    str(row[0])
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    ).fetchall()
+                }
+                required_tables = {
+                    "equipment_types",
+                    "equipment_type_subtypes",
+                    "test_contents",
+                    "test_content_selectors",
+                }
+                if required_tables.issubset(existing_tables):
+                    door_type = connection.execute(
+                        "SELECT id FROM equipment_types WHERE name = '门禁释放' COLLATE NOCASE "
+                        "AND integration_code = 'T19' ORDER BY id LIMIT 1"
+                    ).fetchone()
+                    existing_door_type = connection.execute(
+                        "SELECT id FROM equipment_types WHERE name = '门禁' COLLATE NOCASE "
+                        "AND integration_code = 'T19' ORDER BY id LIMIT 1"
+                    ).fetchone()
+                    if door_type is not None and existing_door_type is None:
+                        connection.execute(
+                            "UPDATE equipment_types SET name = '门禁' WHERE id = ?",
+                            (int(door_type["id"]),),
+                        )
+                    connection.execute(
+                        "UPDATE equipment_type_subtypes SET name = '门禁' "
+                        "WHERE name = '门禁释放' AND parent_equipment_type_id IN "
+                        "(SELECT id FROM equipment_types WHERE integration_code = 'T19' "
+                        "AND name IN ('监视模块', '控制模块', '门禁')) "
+                        "AND NOT EXISTS (SELECT 1 FROM equipment_type_subtypes AS current "
+                        "WHERE current.parent_equipment_type_id = equipment_type_subtypes.parent_equipment_type_id "
+                        "AND current.name = '门禁')"
+                    )
+                    connection.execute(
+                        "UPDATE test_contents SET equipment_subtype = '门禁' "
+                        "WHERE integration_code = 'T19' AND equipment_subtype = '门禁释放'"
+                    )
+                    connection.execute(
+                        "UPDATE test_content_selectors SET equipment_subtype = '门禁' "
+                        "WHERE equipment_subtype = '门禁释放' AND test_content_id IN "
+                        "(SELECT id FROM test_contents WHERE integration_code = 'T19')"
+                    )
+                    for parent_name in ("监视模块", "控制模块"):
+                        parent = connection.execute(
+                            "SELECT id FROM equipment_types WHERE integration_code = 'T19' "
+                            "AND name = ? COLLATE NOCASE ORDER BY id LIMIT 1",
+                            (parent_name,),
+                        ).fetchone()
+                        if parent is None:
+                            continue
+                        parent_id = int(parent["id"])
+                        subtype = connection.execute(
+                            "SELECT id FROM equipment_type_subtypes "
+                            "WHERE parent_equipment_type_id = ? AND name = '门禁' COLLATE NOCASE",
+                            (parent_id,),
+                        ).fetchone()
+                        if subtype is None:
+                            next_order = int(connection.execute(
+                                "SELECT COALESCE(MAX(sort_order), 0) + 1 "
+                                "FROM equipment_type_subtypes WHERE parent_equipment_type_id = ?",
+                                (parent_id,),
+                            ).fetchone()[0])
+                            connection.execute(
+                                "INSERT INTO equipment_type_subtypes(parent_equipment_type_id, code, name, sort_order, is_enabled) "
+                                "VALUES (?, ?, '门禁', ?, 1)",
+                                (parent_id, f"{parent_id}_DOOR_ACCESS", next_order),
+                            )
+                            subtype_id = int(connection.execute(
+                                "SELECT last_insert_rowid()"
+                            ).fetchone()[0])
+                        else:
+                            subtype_id = int(subtype["id"])
+                        for sort_order, status_name in enumerate(
+                            ("门禁释放反馈", "门禁释放"), start=1
+                        ):
+                            connection.execute(
+                                "INSERT OR IGNORE INTO equipment_subtype_statuses("
+                                "equipment_subtype_id, name, sort_order, is_enabled) "
+                                "VALUES (?, ?, ?, 1)",
+                                (subtype_id, status_name, sort_order),
+                            )
+                connection.execute("INSERT INTO schema_migrations(version) VALUES (9)")
+                current_version = 9
             selector_columns = {
                 row[1]
                 for row in connection.execute(
@@ -766,6 +1040,7 @@ class CatalogRepository:
                 )
             _seed_builtin_statuses(connection)
             _migrate_asd_remote_reset_to_control(connection)
+            _migrate_manual_fire_damper_status_rules(connection)
 
     def list_equipment_types(self, *, include_disabled: bool = False) -> list[EquipmentTypeItem]:
         self.ensure_schema()
@@ -1201,9 +1476,11 @@ class CatalogRepository:
                     os.description AS step_description,
                     os.ratio_change,
                     os.sort_order AS step_sort_order,
+                    os.is_enabled AS step_is_enabled,
                     ro.id AS result_id,
                     ro.description AS result_description,
                     ro.sort_order AS result_sort_order,
+                    ro.is_enabled AS result_is_enabled,
                     d.id AS discipline_id,
                     d.code AS discipline_code,
                     d.name AS discipline_name,
@@ -1335,6 +1612,7 @@ class CatalogRepository:
                     description=str(row["step_description"]),
                     ratioChange=str(row["ratio_change"]),
                     sortOrder=int(row["step_sort_order"]),
+                    isEnabled=bool(row["step_is_enabled"]),
                     results=[],
                 )
                 step_lookup[step_id] = step
@@ -1349,6 +1627,7 @@ class CatalogRepository:
                     id=result_id,
                     description=str(row["result_description"]),
                     sortOrder=int(row["result_sort_order"]),
+                    isEnabled=bool(row["result_is_enabled"]),
                     responsibleDisciplines=[],
                 )
                 result_lookup[result_id] = result
@@ -1492,22 +1771,29 @@ class CatalogRepository:
                         path=["subtypes"],
                         status_code=409,
                     )
-                if str(existing["name"]).casefold() != subtype.name.casefold():
-                    rule_count = connection.execute(
+                old_name = str(existing["name"])
+                if old_name.casefold() != subtype.name.casefold():
+                    # Test rules refer to subtypes by their display name. Keep those
+                    # references in sync when a subtype is renamed, so changing a
+                    # special-module label does not make existing rules unmatchable.
+                    connection.execute(
                         """
-                        SELECT COUNT(*) FROM test_contents
+                        UPDATE test_contents
+                        SET equipment_subtype = ?
                         WHERE equipment_type_id = ?
                           AND equipment_subtype = ? COLLATE NOCASE
                         """,
-                        (parent_id, str(existing["name"])),
-                    ).fetchone()[0]
-                    if int(rule_count or 0):
-                        raise BusinessError(
-                            "设备子类型已被测试规则使用，无法重命名",
-                            "CATALOG_EQUIPMENT_SUBTYPE_IN_USE",
-                            path=["subtypes"],
-                            status_code=409,
-                        )
+                        (subtype.name, parent_id, old_name),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE test_content_selectors
+                        SET equipment_subtype = ?
+                        WHERE equipment_type = ? COLLATE NOCASE
+                          AND equipment_subtype = ? COLLATE NOCASE
+                        """,
+                        (subtype.name, str(parent["name"]), old_name),
+                    )
                 connection.execute(
                     """
                     UPDATE equipment_type_subtypes
