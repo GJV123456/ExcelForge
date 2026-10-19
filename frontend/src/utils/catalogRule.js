@@ -1,8 +1,21 @@
 const text = (value) => typeof value === 'string' ? value : ''
 const firstText = (...values) => values.find((value) => typeof value === 'string') || ''
+const compact = (value) => String(value ?? '').replace(/[\s\u3000]/g, '').toLocaleLowerCase()
+const inferRuleStatus = (rule) => {
+  const stepText = (rule.operationSteps || []).flatMap((step) => [
+    step.description,
+    ...(step.results || []).map((result) => result.description)
+  ]).join(' ')
+  const searchable = compact(`${rule.content || ''} ${rule.code || ''} ${stepText}`)
+  const knownStatuses = [
+    '预警', '火警', '故障', '远程复位', '远方复归', '报警反馈', '故障反馈',
+    '感温光纤综合故障', '区间上行感温光纤报警反馈', '区间下行感温光纤报警反馈'
+  ]
+  return knownStatuses.find((status) => searchable.includes(compact(status))) || ''
+}
 
 const BUILTIN_STATUS_MAP = {
-  '监视模块/吸气式主机': ['预警', '火警', '故障', '远程复位'],
+  '监视模块/吸气式主机': ['预警', '火警', '故障'],
   '监视模块/感温电缆': ['报警反馈', '故障反馈', '远程复位'],
   '监视模块/感温光纤': ['感温光纤综合故障', '区间上行感温光纤报警反馈', '区间下行感温光纤报警反馈'],
   '监视模块/AFC': ['AFC切非反馈', 'AFC切非', 'AFC状态反馈', 'AFC释放控制'],
@@ -13,7 +26,7 @@ const BUILTIN_STATUS_MAP = {
   '监视模块/消防泵': ['消防泵手/自动反馈', '消防泵动作反馈', '消防泵故障反馈', '压力开关动作反馈', '流量开关动作反馈', '高水位报警反馈', '低水位报警反馈', '最低水位报警反馈', '稳压泵动作反馈', '稳压泵故障反馈', '消防泵启动控制', '巡检柜报警反馈', '信号阀动作反馈', '水流指示器动作反馈'],
   '监视模块/门禁释放': ['门禁释放反馈', '门禁释放'],
   '监视模块/电气火灾、消防电源、应急疏散': ['电气火灾监控报警', '电气火灾监控故障反馈', '消防电源监控系统报警', '消防电源监控系统故障反馈', '应急照明及疏散指示系统状态反馈', '应急照明及疏散指示系统模式控制'],
-  '控制模块/吸气式主机': ['预警', '火警', '故障', '远程复位'],
+  '控制模块/吸气式主机': ['远程复位'],
   '控制模块/感温电缆': ['报警反馈', '故障反馈', '远程复位'],
   '控制模块/AFC': ['AFC切非反馈', 'AFC切非', 'AFC状态反馈', 'AFC释放控制'],
   '控制模块/EPS': ['状态反馈', '启动控制'],
@@ -69,7 +82,7 @@ export const createRuleDraft = (rule, equipmentType) => {
     code: text(rule.code),
     content: text(rule.content),
     equipmentSubtype: firstText(rule.equipmentSubtype, rule.equipment_subtype, rule.subtype?.name, rule.equipmentSubtypeName),
-    equipmentStatus: firstText(rule.equipmentStatus, rule.equipment_status, rule.status),
+    equipmentStatus: firstText(rule.equipmentStatus, rule.equipment_status, rule.status) || inferRuleStatus(rule),
     description: text(rule.description),
     revision: Number.isInteger(rule.revision) ? rule.revision : 1,
     sortOrder: Number.isInteger(rule.sortOrder) ? rule.sortOrder : 1,

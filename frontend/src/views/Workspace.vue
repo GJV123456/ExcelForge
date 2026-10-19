@@ -15,11 +15,14 @@ import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
 import { buildTestLocation, validateFormalLocation } from '../utils/formalLocation'
 import { integrationProjects } from '../data/integrations'
+import { stationOptions } from '../data/stations'
 
 const excel = useExcelStore()
 const loading = ref(false)
 const historyLoading = ref(false)
 const history = ref([])
+const historyExpanded = ref(false)
+const visibleHistory = computed(() => historyExpanded.value ? history.value : history.value.slice(0, 5))
 const historyDetailLoading = ref(false)
 const historyDetailVisible = ref(false)
 const historyDetail = ref(null)
@@ -31,7 +34,16 @@ const selectedIntegration = computed({
 const selectedProject = computed(() => integrationOptions.find((item) => item.code === selectedIntegration.value))
 const isT19Selected = computed(() => selectedIntegration.value === 'T19')
 const isIntegrationSelected = computed(() => Boolean(selectedProject.value))
-const location = reactive({ type: '', direction: '', startStation: '', endStation: '' })
+// 默认按站点测试，并使用站点基础资料中的第一个站点作为开始/结束站点。
+// 这样打开工作台后地点配置即可直接使用，同时仍可由用户修改。
+const defaultStation = stationOptions[0]?.value || ''
+const location = reactive({
+  type: '站点',
+  direction: '',
+  startStation: defaultStation,
+  endStation: defaultStation,
+  stations: defaultStation ? [defaultStation] : ['']
+})
 const locationValue = computed({ get: () => location, set: (value) => Object.assign(location, value) })
 const submitLabel = computed(() => loading.value ? '正在生成正式文件...' : '生成正式文件')
 const isSpecialModuleSheet = (rows = []) => rows[0]?.['设备类型'] === '特殊模块'
@@ -58,7 +70,9 @@ const baseTestContents = computed(() => excel.rows.map((row, index) => ({
     equipmentCode: excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || ''),
     equipmentChinese: row['设备中文'] || row['测试内容'] || '',
     signalDescription: row['信号描述'] || '',
-    testContent: excel.excelType === 'A' ? (row['测试内容'] || '') : buildContent(row, excel.rules)
+    testContent: excel.excelType === 'A' ? (row['测试内容'] || '') : buildContent(row, excel.rules),
+    integrationCode: selectedIntegration.value,
+    classificationProfile: selectedProject.value?.classificationProfile
   })
 })))
 const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName }) => ({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName })))
@@ -137,8 +151,9 @@ const submit = async () => {
   if (loading.value) return
   const message = validate()
   if (message) return ElMessage.warning(message)
-  // intervalName is a display-only classification detail, not part of the v2 API contract.
-  const testContents = baseTestContents.value.map(({ intervalName, ...content }) => content)
+  // Preserve the parsed interval context so the backend can render the
+  // correct 上行/下行 rule when the source text is customized.
+  const testContents = baseTestContents.value
   loading.value = true
   try {
     const response = await processExcelV2({ integrationCode: selectedIntegration.value, testLocation: buildTestLocation(location), testContents })
@@ -189,9 +204,9 @@ watch(selectedIntegration, (value) => {
     </el-collapse-transition>
     <el-card v-if="isT19Selected" class="section-card generation-history">
       <template #header>
-        <div class="history-heading"><b>近期生成文件</b><el-button text type="primary" :icon="Refresh" :loading="historyLoading" @click="loadHistory">刷新记录</el-button></div>
+        <div class="history-heading"><b>近期生成文件</b><div class="history-heading-actions"><el-button v-if="history.length > 5" text type="primary" @click="historyExpanded = !historyExpanded">{{ historyExpanded ? '收起' : '查看更多' }}</el-button><el-button text type="primary" :icon="Refresh" :loading="historyLoading" @click="loadHistory">刷新记录</el-button></div></div>
       </template>
-      <el-table v-if="history.length" v-loading="historyLoading" :data="history" stripe>
+      <el-table v-if="history.length" v-loading="historyLoading" :data="visibleHistory" stripe>
         <el-table-column label="生成时间" min-width="180"><template #default="{ row }">{{ formatGeneratedAt(row.generatedAt) }}</template></el-table-column>
         <el-table-column label="文件名" min-width="260" show-overflow-tooltip><template #default="{ row }"><code>{{ row.filename }}</code></template></el-table-column>
         <el-table-column label="地点" min-width="150"><template #default="{ row }">{{ row.testLocation?.startStation || row.testLocation?.type || '—' }}</template></el-table-column>

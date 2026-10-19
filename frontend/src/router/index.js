@@ -12,7 +12,7 @@ const router = createRouter({
       redirect: '/workspace',
       children: [
         { path: 'workspace', component: () => import('../views/Workspace.vue') },
-        { path: 'config', component: () => import('../views/Config.vue'), meta: { integrationCode: 'T19' } }
+        { path: 'config', component: () => import('../views/Config.vue') }
       ]
     },
     { path: '/:pathMatch(.*)*', redirect: '/' }
@@ -23,7 +23,6 @@ router.beforeEach((to) => {
   const user = useUserStore()
   const excel = useExcelStore()
   if (!to.meta.public && !user.token) return { path: '/login', query: { redirect: to.fullPath } }
-  if (to.meta.integrationCode && excel.selectedIntegration !== to.meta.integrationCode) return '/workspace'
   if (to.path === '/login' && user.token) return '/'
 })
 export default router

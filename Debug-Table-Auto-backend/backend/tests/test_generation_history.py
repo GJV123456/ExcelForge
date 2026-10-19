@@ -97,8 +97,35 @@ def test_failed_v2_generation_does_not_create_history(tmp_path: Path) -> None:
 def test_generation_history_validates_paging_and_missing_id(tmp_path: Path) -> None:
     with _client(tmp_path / "catalog.sqlite3") as client:
         invalid_limit = client.get("/api/generations", params={"limit": 0})
+        oversized_limit = client.get("/api/generations", params={"limit": 21})
         missing = client.get("/api/generations/00000000-0000-0000-0000-000000000000")
 
     assert invalid_limit.status_code == 422
+    assert oversized_limit.status_code == 422
     assert missing.status_code == 404
     assert missing.json()["code"] == "GENERATION_NOT_FOUND"
+
+
+def test_generation_history_retains_only_the_latest_twenty_runs(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with _client(database_path) as client:
+        generation_ids = []
+        for index in range(21):
+            response = client.post(
+                "/api/v2/excel/process",
+                json=_payload(),
+                headers={"X-Request-ID": f"retention-{index}"},
+            )
+            assert response.status_code == 200
+            generation_ids.append(response.headers["X-Generation-ID"])
+        history = client.get("/api/generations", params={"limit": 20})
+        oldest_detail = client.get(f"/api/generations/{generation_ids[0]}")
+
+    assert history.status_code == 200
+    assert history.json()["meta"] == {"count": 20}
+    assert generation_ids[0] not in {item["id"] for item in history.json()["data"]}
+    assert oldest_detail.status_code == 404
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM generation_runs").fetchone()[0] == 20
+        assert connection.execute("SELECT COUNT(*) FROM generation_test_contents").fetchone()[0] == 40
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []

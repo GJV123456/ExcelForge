@@ -29,26 +29,27 @@ export function detectExcelType(headers) {
 export async function parseExcel(file) {
   const data = await file.arrayBuffer()
   const workbook = XLSX.read(data, { type: 'array' })
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  if (!sheet) throw createHeaderError([])
-  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-  const headerEntries = (matrix[0] || [])
-    .map((value, index) => ({ name: normalize(value), index }))
-    .filter(({ name }) => name)
-  const headers = headerEntries.map(({ name }) => name)
-  const excelType = detectExcelType(headers)
-  if (!excelType) throw createHeaderError(headers)
-  const businessHeaders = excelType === 'A' ? typeAHeaders : typeBHeaders
-  const rows = matrix.slice(1)
-    .filter((row) => businessHeaders.some((header) => {
-      const column = headerEntries.find(({ name }) => name === header)?.index
-      return column !== undefined && normalize(row[column])
-    }))
-    .map((row, index) => ({
-      sortIndex: index + 1,
-      ...Object.fromEntries(headerEntries.map(({ name, index: column }) => [name, normalize(row[column])]))
-    }))
-  return { headers, rows, excelType }
+  const candidates = []
+  for (const sheetName of workbook.SheetNames) {
+    const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '' })
+    for (let headerRow = 0; headerRow < Math.min(matrix.length, 12); headerRow += 1) {
+      const headerEntries = (matrix[headerRow] || []).map((value, index) => ({ name: normalize(value), index })).filter(({ name }) => name)
+      const detected = detectExcelType(headerEntries.map(({ name }) => name))
+      const formalTypeA = !detected && headerEntries.some(({ name }) => /^测试内容(?:（必填）|\(必填\))?$/.test(name))
+      if (detected || formalTypeA) candidates.push({ matrix, headerRow, headerEntries, excelType: detected || 'A' })
+    }
+  }
+  if (!candidates.length) throw createHeaderError([])
+  const selected = candidates.find((item) => item.excelType === 'B') || candidates[0]
+  const { matrix, headerRow, headerEntries, excelType } = selected
+  const contentNames = headerEntries.filter(({ name }) => name === '测试内容' || name.startsWith('测试内容')).map(({ name }) => name)
+  const contentName = contentNames.find((name) => name === '测试内容') || contentNames[0]
+  const inferredType = /设备信息监视|监视模块/i.test(String(file.name || '')) ? '监视模块' : ''
+  const businessNames = excelType === 'A' ? [contentName] : ['设备编码', '设备类型', '设备中文']
+  const rows = matrix.slice(headerRow + 1).map((row, index) => ({ sortIndex: index + 1, ...Object.fromEntries(headerEntries.map(({ name, index: column }) => [name, normalize(row[column])])) }))
+    .filter((row) => { const value = businessNames.map((name) => normalize(row[name])).find(Boolean) || ''; return value && value.toLowerCase() !== 'end' })
+    .map((row) => { if (excelType === 'A' && contentName !== '测试内容') row['测试内容'] = row[contentName] || ''; if (excelType === 'A' && !row['类型'] && inferredType) row['类型'] = inferredType; return row })
+  return { headers: headerEntries.map(({ name }) => name), rows, excelType }
 }
 
 export function buildContent(row, rules) {

@@ -22,7 +22,7 @@ def _repository(request: Request) -> GenerationRepository:
 @router.get("")
 def list_generations(
     request: Request,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    limit: Annotated[int, Query(ge=1, le=20)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     integration_code: Annotated[str | None, Query(alias="integrationCode", min_length=1, max_length=32)] = None,
 ) -> GenerationListResponse:
@@ -36,8 +36,9 @@ def list_generations(
 def get_generation(
     generation_id: Annotated[str, Path(min_length=36, max_length=36)],
     request: Request,
+    integration_code: Annotated[str | None, Query(alias="integrationCode", min_length=1, max_length=32)] = None,
 ) -> GenerationDetailResponse:
-    data = _repository(request).get_generation(generation_id)
+    data = _repository(request).get_generation(generation_id, integration_code)
     if data is None:
         raise BusinessError(
             "生成记录不存在",
@@ -51,8 +52,9 @@ def get_generation(
 def download_generation(
     generation_id: Annotated[str, Path(min_length=36, max_length=36)],
     request: Request,
+    integration_code: Annotated[str | None, Query(alias="integrationCode", min_length=1, max_length=32)] = None,
 ) -> Response:
-    result = _repository(request).get_output(generation_id)
+    result = _repository(request).get_output(generation_id, integration_code)
     if result is None:
         raise BusinessError(
             "生成文件不存在或历史记录没有保存文件内容",

@@ -18,11 +18,27 @@ const loading = ref(false)
 const location = reactive({ type: '', direction: '', startStation: '', endStation: '' })
 const locationValue = computed({ get: () => location, set: (value) => Object.assign(location, value) })
 const submitLabel = computed(() => loading.value ? '正在生成正式文件...' : '生成正式文件')
+const rowValue = (row, ...keys) => {
+  for (const key of keys) {
+    const value = String(row[key] ?? '').trim()
+    if (value) return value
+  }
+  return ''
+}
+const intervalFrom = (value) => String(value ?? '').match(/([\u4e00-\u9fffA-Za-z0-9]{1,12})区间(?:上行|下行)/)?.[1] || ''
 const baseTestContents = computed(() => excel.rows.map((row, index) => ({
   sortIndex: row.sortIndex || index + 1,
   generatedContent: excel.excelType === 'B' ? buildContent(row, excel.rules) : (row['测试内容'] || '[空]'),
+  equipmentChinese: rowValue(row, '设备中文', '设备名称', '测试内容'),
+  signalDescription: rowValue(row, '信号描述', '信号说明'),
+  additionalCode: rowValue(row, '附加编号', '附加编码', '附加码'),
   equipmentCode: excel.excelType === 'A' ? extractEquipmentCode(row['测试内容']) : (row['设备编码'] || ''),
-  equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || '')
+  equipmentType: excel.excelType === 'A' ? (row['类型'] || '') : (row['设备类型'] || ''),
+  equipmentSubtype: rowValue(row, '设备子类型', '设备子类', '设备子系统') || (
+    String(excel.excelType === 'B' ? buildContent(row, excel.rules) : (row['测试内容'] || '')).includes('感温光纤') ? '感温光纤' : ''
+  ),
+  equipmentStatus: rowValue(row, '设备状态', '状态'),
+  intervalName: intervalFrom(excel.excelType === 'B' ? buildContent(row, excel.rules) : (row['测试内容'] || ''))
 })))
 const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent }) => ({ sortIndex, generatedContent })))
 

@@ -590,6 +590,12 @@ body {
     gap: 12px
 }
 
+.history-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px
+}
+
 .history-detail-list {
     display: flex;
     flex-direction: column;

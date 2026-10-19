@@ -22,6 +22,23 @@ test('ignores rows that only contain values outside business columns', async () 
   assert.equal(parsed.rows[0]['附加编号'], '_N1L09-M01_MK-1')
 })
 
+test('keeps rows without equipment codes and skips equipment-type-only placeholders', async () => {
+  const workbook = XLSX.utils.book_new()
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['设备编码', '设备类型', '设备中文'],
+    ['', '特殊模块', '站厅B端弱电综合设备室气灭测试（含远程控制盒）'],
+    ['', '特殊模块', '']
+  ])
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Sheet1')
+  const bytes = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
+
+  const parsed = await parseExcel(new Blob([bytes]))
+
+  assert.equal(parsed.rows.length, 1)
+  assert.equal(parsed.rows[0]['设备编码'], '')
+  assert.equal(parsed.rows[0]['设备中文'], '站厅B端弱电综合设备室气灭测试（含远程控制盒）')
+})
+
 test('builds type B content with signal description', () => {
   const row = {
     设备中文: '站厅B端应急照明',

@@ -15,7 +15,7 @@ from app.domain.workbook import (
     TestContentRow,
 )
 from app.exceptions import BusinessError
-from app.resource_paths import resolve_database_path
+from app.resource_paths import resolve_catalog_database_path
 from app.schemas.excel_v2 import ExcelProcessV2Request, V2TestContent
 from app.services.excel_processor import XLS_MEDIA_TYPE, ProcessedFile
 from app.utils.xls_writer import build_formal_workbook
@@ -26,6 +26,37 @@ ALLOWED_DIRECTIONS = frozenset({"上行", "下行"})
 MAX_BIFF8_DATA_ROWS = 65_533
 MAX_CELL_TEXT_LENGTH = 32_767
 UNSAFE_FILENAME_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+INTERVAL_DIRECTION_PATTERN = re.compile(
+    r"(?P<interval>[\u4e00-\u9fffA-Za-z0-9]{1,12})区间(?P<direction>上行|下行)"
+)
+
+
+def _source_values(item: V2TestContent) -> tuple[str, ...]:
+    return tuple(
+        value.strip()
+        for value in (
+            item.equipment_chinese,
+            item.generated_content,
+            item.equipment_status,
+            item.signal_description,
+            item.interval_name,
+        )
+        if value and value.strip()
+    )
+
+
+def _interval_context(item: V2TestContent) -> tuple[str, str]:
+    for value in _source_values(item):
+        match = INTERVAL_DIRECTION_PATTERN.search(value)
+        if match:
+            return match.group("interval"), match.group("direction")
+    return "", ""
+
+
+def _render_rule_text(value: str, interval: str) -> str:
+    if not interval:
+        return value
+    return re.sub(r"xx", lambda _: interval, value, flags=re.IGNORECASE)
 
 
 def _require_text(value: str, path: list[str | int]) -> str:
@@ -90,25 +121,47 @@ def _build_location(request: ExcelProcessV2Request) -> LocationRow:
 def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[dict[str, object]]:
     """Resolve the fixed operation/result hierarchy stored in SQLite.
 
-    Rules are normally keyed by equipment type.  A captured subtype is tried
-    first so deployments that use subtypes as catalog equipment types work as
-    well; the broad equipment type is the compatibility fallback.
+    Resolve rules by equipment type first, then subtype, then status/action.
+    Subtype-as-equipment-type lookup is retained only as a compatibility
+    fallback when the broad equipment type has no catalog entries.
     """
-    exact = repository.find_test_content_rule(
-        item.equipment_type.strip(),
-        item.equipment_subtype.strip(),
-        item.equipment_status.strip(),
-    )
-    if exact is not None:
-        candidates = [exact]
-    else:
-        keys = [item.equipment_subtype.strip(), item.equipment_type.strip()]
-        candidates = []
-        for key in keys:
-            if key:
-                candidates = repository.list_test_contents(equipment_type=key)
-                if candidates:
-                    break
+    equipment_type = item.equipment_type.strip()
+    equipment_subtype = item.equipment_subtype.strip()
+    equipment_status = item.equipment_status.strip()
+    source_values = _source_values(item)
+    inferred_fiber = any("感温光纤" in value for value in source_values)
+    # Keep the catalog hierarchy authoritative: broad equipment type first.
+    candidates = repository.list_test_contents(equipment_type=equipment_type)
+    if not candidates and equipment_subtype:
+        # Older catalogs sometimes store a subtype as the equipment type.
+        candidates = repository.list_test_contents(equipment_type=equipment_subtype)
+    if not candidates and inferred_fiber:
+        candidates = repository.list_test_contents(equipment_type="感温光纤")
+
+    if equipment_subtype and candidates:
+        subtype_candidates = [
+            candidate for candidate in candidates
+            if str(candidate.get("equipmentSubtype", "")).strip().casefold()
+            == equipment_subtype.casefold()
+        ]
+        if subtype_candidates:
+            candidates = subtype_candidates
+        else:
+            generic_candidates = [
+                candidate
+                for candidate in candidates
+                if not str(candidate.get("equipmentSubtype", "")).strip()
+            ]
+            if generic_candidates:
+                candidates = generic_candidates
+            elif any(str(candidate.get("equipmentSubtype", "")).strip() for candidate in candidates):
+            # Do not fall through to another subtype under the same broad
+            # equipment type. That can turn an unsupported ASD reset into an
+            # unrelated 400V cutoff rule, for example.
+                raise BusinessError(
+                    f"设备类型“{equipment_type}”下未配置子类型“{equipment_subtype}”的规则",
+                    "CATALOG_RULE_NOT_FOUND",
+                )
     if not candidates:
         raise BusinessError(
             (
@@ -117,24 +170,86 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
             ),
             "CATALOG_RULE_NOT_FOUND",
         )
-    source_values = tuple(
-        value
-        for value in (
-            item.equipment_chinese.strip(),
-            item.generated_content.strip(),
-            item.equipment_status.strip(),
-            item.signal_description.strip(),
-        )
-        if value
-    )
+    interval, direction = _interval_context(item)
+    # Status is the most specific selector. Many catalog entries intentionally
+    # share a generic title such as "监视模块", which also appears in the input
+    # text; matching that title first would always select the first status rule.
     selected = next(
         (
             candidate
             for candidate in candidates
-            if any(str(candidate["content"]) in value for value in source_values)
+            if equipment_status
+            and str(candidate.get("equipmentStatus", "")).strip().casefold()
+            == equipment_status.casefold()
         ),
-        candidates[0],
+        None,
     )
+    if selected is None and direction:
+        selected = next(
+            (
+                candidate
+                for candidate in candidates
+                if direction in str(candidate["content"])
+                or direction in str(candidate.get("equipmentStatus", ""))
+            ),
+            None,
+        )
+    if selected is None:
+        status_matches = [
+            candidate
+            for candidate in candidates
+            if (status := str(candidate.get("equipmentStatus", "")).strip())
+            and any(status.casefold() in value.casefold() for value in source_values)
+        ]
+        if status_matches:
+            longest_status = max(
+                len(str(candidate.get("equipmentStatus", "")).strip())
+                for candidate in status_matches
+            )
+            best_matches = [
+                candidate
+                for candidate in status_matches
+                if len(str(candidate.get("equipmentStatus", "")).strip()) == longest_status
+            ]
+            if len(best_matches) == 1:
+                selected = best_matches[0]
+    if selected is None and inferred_fiber and not direction:
+        selected = next(
+            (
+                candidate
+                for candidate in candidates
+                if "综合故障" in str(candidate.get("equipmentStatus", ""))
+                or "综合故障" in str(candidate["content"])
+            ),
+            None,
+        )
+    if selected is None:
+        content_matches = [
+            candidate
+            for candidate in candidates
+            if (content := str(candidate.get("content", "")).strip())
+            and content != equipment_type
+            and any(content in value for value in source_values)
+        ]
+        if content_matches:
+            longest_content = max(len(str(candidate["content"]).strip()) for candidate in content_matches)
+            best_matches = [
+                candidate
+                for candidate in content_matches
+                if len(str(candidate["content"]).strip()) == longest_content
+            ]
+            if len(best_matches) == 1:
+                selected = best_matches[0]
+    if selected is None and len(candidates) == 1:
+        selected = candidates[0]
+    if selected is None:
+        selector = f" / {equipment_subtype}" if equipment_subtype else ""
+        if equipment_status:
+            selector += f" / {equipment_status}"
+        raise BusinessError(
+            f"未找到设备类型“{equipment_type}{selector}”对应的操作步骤和输出结果",
+            "CATALOG_RULE_NOT_FOUND",
+        )
     steps: list[dict[str, object]] = []
     selected_steps = selected["operationSteps"]
     for step in selected_steps:
@@ -148,7 +263,7 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
                 )
             results.append(
                 {
-                    "description": result["description"],
+                    "description": _render_rule_text(result["description"], interval),
                     "responsibleDisciplines": disciplines,
                 }
             )
@@ -156,7 +271,7 @@ def _catalog_steps(item: V2TestContent, repository: CatalogRepository) -> list[d
             raise BusinessError("目录规则未配置结果输出", "CATALOG_RULE_INCOMPLETE")
         steps.append(
             {
-                "description": step["description"],
+                "description": _render_rule_text(step["description"], interval),
                 "ratioChange": step["ratioChange"],
                 "results": results,
             }
@@ -172,7 +287,12 @@ def prepare_formal_request(
     """Fill omitted operationSteps from the SQLite rule catalog."""
     if all(content.operation_steps for content in request.test_contents):
         return request
-    repository = CatalogRepository(resolve_database_path(settings.database_path))
+    repository = CatalogRepository(
+        resolve_catalog_database_path(
+            settings.database_path, request.integration_code
+        ),
+        request.integration_code,
+    )
     payload = request.model_dump(by_alias=True)
     contents = payload["testContents"]
     assert isinstance(contents, list)

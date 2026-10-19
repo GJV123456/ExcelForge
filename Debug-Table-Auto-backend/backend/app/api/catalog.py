@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+import re
 
 from fastapi import APIRouter, Query, Request, Response
 
@@ -27,7 +28,12 @@ router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 
 def _repository(request: Request) -> CatalogRepository:
-    return request.app.state.catalog_repository
+    integration_code = request.query_params.get("integrationCode", "T19").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,31}", integration_code):
+        raise BusinessError(
+            "联调项目代码格式无效", "INVALID_INTEGRATION_CODE", status_code=422
+        )
+    return request.app.state.catalog_repository_for(integration_code)
 
 
 @router.get("/equipment-types")

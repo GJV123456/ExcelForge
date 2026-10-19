@@ -113,6 +113,7 @@ def test_catalog_first_request_creates_empty_versioned_schema(tmp_path: Path) ->
     assert version == SCHEMA_VERSION
     assert columns == {
         "equipment_types": {
+            "integration_code",
             "id",
             "code",
             "name",
@@ -123,6 +124,7 @@ def test_catalog_first_request_creates_empty_versioned_schema(tmp_path: Path) ->
             "updated_at",
         },
         "test_contents": {
+            "integration_code",
             "id",
             "code",
             "equipment_type_id",
@@ -156,6 +158,7 @@ def test_catalog_first_request_creates_empty_versioned_schema(tmp_path: Path) ->
             "updated_at",
         },
         "disciplines": {
+            "integration_code",
             "id",
             "code",
             "name",
@@ -362,3 +365,30 @@ def test_catalog_detail_returns_one_rule_or_404(tmp_path: Path) -> None:
     assert missing.status_code == 404
     assert missing.json()["code"] == "CATALOG_TEST_CONTENT_NOT_FOUND"
     assert disabled.status_code == 404
+
+
+def test_catalog_data_isolated_by_integration_database(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with _client(database_path) as client:
+        created = client.post(
+            "/api/catalog/equipment-types",
+            params={"integrationCode": "T20"},
+            json={
+                "code": "ONLY_T20",
+                "name": "仅T20设备",
+                "description": "",
+                "sortOrder": 1,
+                "isEnabled": True,
+            },
+        )
+        assert created.status_code == 200
+        t20 = client.get(
+            "/api/catalog/equipment-types", params={"integrationCode": "T20"}
+        )
+        t19 = client.get(
+            "/api/catalog/equipment-types", params={"integrationCode": "T19"}
+        )
+
+    assert any(item["code"] == "ONLY_T20" for item in t20.json()["data"])
+    assert all(item["code"] != "ONLY_T20" for item in t19.json()["data"])
+    assert (tmp_path / "catalog.T20.sqlite3").is_file()

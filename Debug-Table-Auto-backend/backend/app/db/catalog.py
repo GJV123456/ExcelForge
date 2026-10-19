@@ -28,7 +28,7 @@ from app.schemas.catalog import (
     TestContentWriteRequest,
 )
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 _BUILTIN_PARENT_STATUSES: dict[str, list[str]] = {
     "排烟机": ["运行状态", "手自动切换状态", "开启控制命令"],
@@ -37,8 +37,8 @@ _BUILTIN_PARENT_STATUSES: dict[str, list[str]] = {
 
 _BUILTIN_SUBTYPE_STATUSES: dict[tuple[str, str], list[str]] = {
     ("防火阀", "电动防火阀"): ["动作状态", "关控制命令"],
-    ("监视模块", "吸气式主机"): ["预警", "火警", "故障", "远程复位"],
-    ("控制模块", "吸气式主机"): ["预警", "火警", "故障", "远程复位"],
+    ("监视模块", "吸气式主机"): ["预警", "火警", "故障"],
+    ("控制模块", "吸气式主机"): ["远程复位"],
     ("监视模块", "感温电缆"): ["报警反馈", "故障反馈", "远程复位"],
     ("控制模块", "感温电缆"): ["报警反馈", "故障反馈", "远程复位"],
     ("监视模块", "感温光纤"): ["感温光纤综合故障", "区间上行感温光纤报警反馈", "区间下行感温光纤报警反馈"],
@@ -310,6 +310,17 @@ _SCHEMA_V7_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS ix_auth_sessions_expires_at ON auth_sessions(expires_at)",
 )
 
+_SCHEMA_V8_STATEMENTS = (
+    "ALTER TABLE equipment_types ADD COLUMN integration_code TEXT NOT NULL DEFAULT 'T19'",
+    "ALTER TABLE test_contents ADD COLUMN integration_code TEXT NOT NULL DEFAULT 'T19'",
+    "ALTER TABLE disciplines ADD COLUMN integration_code TEXT NOT NULL DEFAULT 'T19'",
+    "ALTER TABLE stations ADD COLUMN integration_code TEXT NOT NULL DEFAULT 'T19'",
+    "CREATE INDEX IF NOT EXISTS ix_equipment_types_integration_code ON equipment_types(integration_code)",
+    "CREATE INDEX IF NOT EXISTS ix_test_contents_integration_code ON test_contents(integration_code)",
+    "CREATE INDEX IF NOT EXISTS ix_disciplines_integration_code ON disciplines(integration_code)",
+    "CREATE INDEX IF NOT EXISTS ix_stations_integration_code ON stations(integration_code)",
+)
+
 
 def _seed_builtin_statuses(connection: sqlite3.Connection) -> None:
     """Add the built-in status choices without replacing custom catalog data."""
@@ -376,6 +387,119 @@ def _seed_builtin_statuses(connection: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO builtin_catalog_seed_markers(name) VALUES ('statuses-v1')"
     )
 
+
+def _migrate_asd_remote_reset_to_control(connection: sqlite3.Connection) -> None:
+    """Keep ASD monitoring states under monitoring and remote reset under control."""
+    tables = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    required_tables = {
+        "builtin_catalog_seed_markers",
+        "equipment_types",
+        "equipment_type_subtypes",
+        "equipment_subtype_statuses",
+        "test_contents",
+    }
+    if not required_tables.issubset(tables):
+        return
+    marker = "asd-module-split-v1"
+    if connection.execute(
+        "SELECT 1 FROM builtin_catalog_seed_markers WHERE name = ?", (marker,)
+    ).fetchone():
+        return
+
+    type_ids = {
+        str(row["name"]): int(row["id"])
+        for row in connection.execute(
+            "SELECT id, name FROM equipment_types WHERE name IN ('监视模块', '控制模块')"
+        ).fetchall()
+    }
+    subtype_ids: dict[str, int] = {}
+    for parent_name, type_id in type_ids.items():
+        row = connection.execute(
+            """
+            SELECT id FROM equipment_type_subtypes
+            WHERE parent_equipment_type_id = ? AND name = '吸气式主机' COLLATE NOCASE
+            LIMIT 1
+            """,
+            (type_id,),
+        ).fetchone()
+        if row is not None:
+            subtype_ids[parent_name] = int(row["id"])
+
+    monitor_id = type_ids.get("监视模块")
+    control_id = type_ids.get("控制模块")
+    monitor_subtype_id = subtype_ids.get("监视模块")
+    control_subtype_id = subtype_ids.get("控制模块")
+    if monitor_id is not None and control_id is not None:
+        existing_control_rule = connection.execute(
+            """
+            SELECT id FROM test_contents
+            WHERE equipment_type_id = ?
+              AND equipment_subtype = '吸气式主机' COLLATE NOCASE
+              AND equipment_status = '远程复位' COLLATE NOCASE
+              AND is_enabled = 1
+            LIMIT 1
+            """,
+            (control_id,),
+        ).fetchone()
+        if existing_control_rule is None:
+            connection.execute(
+                """
+                UPDATE test_contents SET equipment_type_id = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE equipment_type_id = ?
+                  AND equipment_subtype = '吸气式主机' COLLATE NOCASE
+                  AND equipment_status = '远程复位' COLLATE NOCASE
+                """,
+                (control_id, monitor_id),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE test_contents SET is_enabled = 0,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE equipment_type_id = ?
+                  AND equipment_subtype = '吸气式主机' COLLATE NOCASE
+                  AND equipment_status = '远程复位' COLLATE NOCASE
+                """,
+                (monitor_id,),
+            )
+
+    # Correct the built-in selectable status lists in existing databases too.
+    if monitor_subtype_id is not None:
+        connection.execute(
+            """
+            DELETE FROM equipment_subtype_statuses
+            WHERE equipment_subtype_id = ? AND name = '远程复位' COLLATE NOCASE
+            """,
+            (monitor_subtype_id,),
+        )
+    if control_subtype_id is not None:
+        connection.execute(
+            """
+            DELETE FROM equipment_subtype_statuses
+            WHERE equipment_subtype_id = ? AND name IN ('预警', '火警', '故障')
+            """,
+            (control_subtype_id,),
+        )
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO equipment_subtype_statuses(
+                equipment_subtype_id, name, sort_order, is_enabled
+            ) VALUES (?, '远程复位', 1, 1)
+            """,
+            (control_subtype_id,),
+        )
+
+    connection.execute(
+        "INSERT OR IGNORE INTO builtin_catalog_seed_markers(name) VALUES (?)",
+        (marker,),
+    )
+
 # Kept as a separate idempotent statement so existing v2 databases gain the
 # hierarchy table without changing the public schema version or legacy tables.
 _SCHEMA_HIERARCHY_STATEMENTS = (
@@ -437,8 +561,9 @@ _SCHEMA_STATION_STATEMENTS = (
 class CatalogRepository:
     """Create and read the catalog without owning business-data writes."""
 
-    def __init__(self, database_path: Path) -> None:
+    def __init__(self, database_path: Path, integration_code: str = "T19") -> None:
         self.database_path = database_path
+        self.integration_code = integration_code.strip().upper()
 
     def _connect(self) -> sqlite3.Connection:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -571,6 +696,33 @@ class CatalogRepository:
                     connection.execute(statement)
                 connection.execute("INSERT INTO schema_migrations(version) VALUES (7)")
                 current_version = 7
+            if current_version < 8:
+                existing_tables = {
+                    str(row[0])
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    ).fetchall()
+                }
+                for statement in _SCHEMA_V8_STATEMENTS:
+                    target_table = next(
+                        (
+                            table
+                            for table in (
+                                "equipment_types",
+                                "test_contents",
+                                "disciplines",
+                                "stations",
+                            )
+                            if f"ALTER TABLE {table} " in statement
+                            or f" ON {table}(" in statement
+                        ),
+                        None,
+                    )
+                    if target_table and target_table not in existing_tables:
+                        continue
+                    connection.execute(statement)
+                connection.execute("INSERT INTO schema_migrations(version) VALUES (8)")
+                current_version = 8
             selector_columns = {
                 row[1]
                 for row in connection.execute(
@@ -613,6 +765,7 @@ class CatalogRepository:
                     "CREATE INDEX IF NOT EXISTS ix_test_content_selectors_lookup ON test_content_selectors(equipment_type, equipment_subtype)"
                 )
             _seed_builtin_statuses(connection)
+            _migrate_asd_remote_reset_to_control(connection)
 
     def list_equipment_types(self, *, include_disabled: bool = False) -> list[EquipmentTypeItem]:
         self.ensure_schema()
@@ -1247,8 +1400,9 @@ class CatalogRepository:
                     cursor = connection.execute(
                         """
                         INSERT INTO equipment_types(
-                            code, name, description, sort_order, is_enabled
-                        ) VALUES (?, ?, ?, ?, ?)
+                            code, name, description, sort_order, is_enabled,
+                            integration_code
+                        ) VALUES (?, ?, ?, ?, ?, ?)
                         """,
                         (
                             equipment_code,
@@ -1256,6 +1410,7 @@ class CatalogRepository:
                             payload.description,
                             payload.sort_order,
                             1 if payload.is_enabled else 0,
+                            self.integration_code,
                         ),
                     )
                     target_id = int(cursor.lastrowid)
@@ -1509,8 +1664,9 @@ class CatalogRepository:
                     cursor = connection.execute(
                         """
                         INSERT INTO disciplines(
-                            code, name, description, sort_order, is_enabled
-                        ) VALUES (?, ?, ?, ?, ?)
+                            code, name, description, sort_order, is_enabled,
+                            integration_code
+                        ) VALUES (?, ?, ?, ?, ?, ?)
                         """,
                         (
                             discipline_code,
@@ -1518,6 +1674,7 @@ class CatalogRepository:
                             payload.description,
                             payload.sort_order,
                             1 if payload.is_enabled else 0,
+                            self.integration_code,
                         ),
                     )
                     target_id = int(cursor.lastrowid)
@@ -1566,8 +1723,10 @@ class CatalogRepository:
                     )
                     cursor = connection.execute(
                         """
-                        INSERT INTO stations(code, name, description, sort_order, is_enabled)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO stations(
+                            code, name, description, sort_order, is_enabled,
+                            integration_code
+                        ) VALUES (?, ?, ?, ?, ?, ?)
                         """,
                         (
                             station_code,
@@ -1575,6 +1734,7 @@ class CatalogRepository:
                             payload.description,
                             payload.sort_order,
                             1 if payload.is_enabled else 0,
+                            self.integration_code,
                         ),
                     )
                     target_id = int(cursor.lastrowid)
@@ -1627,8 +1787,8 @@ class CatalogRepository:
                         INSERT INTO test_contents(
                             code, equipment_type_id, equipment_subtype, equipment_status,
                             content, description,
-                            revision, sort_order, is_enabled
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            revision, sort_order, is_enabled, integration_code
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             content_code,
@@ -1640,6 +1800,7 @@ class CatalogRepository:
                             payload.revision,
                             payload.sort_order,
                             1 if payload.is_enabled else 0,
+                            self.integration_code,
                         ),
                     )
                     target_id = int(cursor.lastrowid)

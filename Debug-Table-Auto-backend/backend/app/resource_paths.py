@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -60,3 +61,21 @@ def default_database_path() -> Path:
 def resolve_database_path(configured_path: Path | None = None) -> Path:
     """Resolve an explicit database override or the runtime-specific default."""
     return configured_path.expanduser().resolve() if configured_path else default_database_path()
+
+
+def resolve_catalog_database_path(
+    configured_path: Path | None, integration_code: str = "T19"
+) -> Path:
+    """Resolve an isolated catalog database for one integration project.
+
+    T19 keeps using the configured legacy database so its existing catalog is
+    preserved. Other projects get sibling SQLite files, keeping IDs and rules
+    isolated while reusing the exact same application logic.
+    """
+    code = integration_code.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,31}", code):
+        raise ValueError("Invalid integration code")
+    base_path = resolve_database_path(configured_path)
+    if code == "T19":
+        return base_path
+    return base_path.with_name(f"{base_path.stem}.{code}{base_path.suffix}")

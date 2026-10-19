@@ -32,6 +32,8 @@ def _last_row_id(cursor: sqlite3.Cursor) -> int:
 class GenerationRepository:
     """Persist successful formal generations in the catalog database."""
 
+    RETENTION_LIMIT = 20
+
     def __init__(self, database_path: Path) -> None:
         self.database = CatalogRepository(database_path)
 
@@ -60,6 +62,7 @@ class GenerationRepository:
             for result in step.results
         )
         location = request.test_location
+        integration_code = request.integration_code.strip().upper()
 
         with closing(self.database._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -75,7 +78,7 @@ class GenerationRepository:
                 """,
                 (
                     generation_id,
-                    request.integration_code,
+                    integration_code,
                     request_id,
                     generated_at.isoformat(),
                     filename,
@@ -161,6 +164,21 @@ class GenerationRepository:
                                 )
                             ),
                         )
+            # Keep the generation run and its dependent snapshot rows bounded.
+            # Foreign-key cascades remove contents, steps, results, and disciplines.
+            connection.execute(
+                """
+                DELETE FROM generation_runs
+                WHERE integration_code = ?
+                  AND id IN (
+                    SELECT id FROM generation_runs
+                    WHERE integration_code = ?
+                    ORDER BY generated_at DESC, created_at DESC, id DESC
+                    LIMIT -1 OFFSET ?
+                  )
+                """,
+                (integration_code, integration_code, self.RETENTION_LIMIT),
+            )
         return generation_id
 
     def list_generations(
@@ -176,7 +194,7 @@ class GenerationRepository:
                     ORDER BY generated_at DESC, created_at DESC, id DESC
                     LIMIT ? OFFSET ?
                     """,
-                    (integration_code, limit, offset),
+                    (integration_code.strip().upper(), limit, offset),
                 ).fetchall()
             else:
                 rows = connection.execute(
@@ -189,12 +207,20 @@ class GenerationRepository:
                 ).fetchall()
         return [self._summary(row) for row in rows]
 
-    def get_generation(self, generation_id: str) -> GenerationDetail | None:
+    def get_generation(
+        self, generation_id: str, integration_code: str | None = None
+    ) -> GenerationDetail | None:
         self.database.ensure_schema()
         with closing(self.database._connect()) as connection, connection:
-            run = connection.execute(
-                "SELECT * FROM generation_runs WHERE id = ?", (generation_id,)
-            ).fetchone()
+            if integration_code:
+                run = connection.execute(
+                    "SELECT * FROM generation_runs WHERE id = ? AND integration_code = ?",
+                    (generation_id, integration_code.strip().upper()),
+                ).fetchone()
+            else:
+                run = connection.execute(
+                    "SELECT * FROM generation_runs WHERE id = ?", (generation_id,)
+                ).fetchone()
             if run is None:
                 return None
             rows = connection.execute(
@@ -289,14 +315,22 @@ class GenerationRepository:
                 )
         return detail
 
-    def get_output(self, generation_id: str) -> tuple[str, bytes] | None:
+    def get_output(
+        self, generation_id: str, integration_code: str | None = None
+    ) -> tuple[str, bytes] | None:
         """Return the stored workbook bytes and filename for a successful run."""
         self.database.ensure_schema()
         with closing(self.database._connect()) as connection, connection:
-            row = connection.execute(
-                "SELECT filename, output_blob FROM generation_runs WHERE id = ?",
-                (generation_id,),
-            ).fetchone()
+            if integration_code:
+                row = connection.execute(
+                    "SELECT filename, output_blob FROM generation_runs WHERE id = ? AND integration_code = ?",
+                    (generation_id, integration_code.strip().upper()),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT filename, output_blob FROM generation_runs WHERE id = ?",
+                    (generation_id,),
+                ).fetchone()
         if row is None or row["output_blob"] is None:
             return None
         return str(row["filename"]), bytes(row["output_blob"])

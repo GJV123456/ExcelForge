@@ -37,25 +37,53 @@ export function detectExcelType(headers) {
 export async function parseExcel(file) {
   const data = await file.arrayBuffer()
   const workbook = XLSX.read(data, { type: 'array' })
-  const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  if (!sheet) throw createHeaderError([])
-  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-  const headerEntries = (matrix[0] || [])
-    .map((value, index) => ({ name: normalize(value), index }))
-    .filter(({ name }) => name)
-  const headers = headerEntries.map(({ name }) => name)
-  const excelType = detectExcelType(headers)
-  if (!excelType) throw createHeaderError(headers)
-  const businessHeaders = excelType === 'A' ? typeAHeaders : typeBHeaders
-  const rows = matrix.slice(1)
-    .filter((row) => businessHeaders.some((header) => {
-      const column = headerEntries.find(({ name }) => name === header)?.index
-      return column !== undefined && normalize(row[column])
-    }))
+  // A formal workbook has several sheets and the input table is usually the
+  // second sheet. Search every sheet (and the first few rows) instead of
+  // assuming that sheet 1 contains the business headers.
+  const candidates = []
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName]
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+    for (let headerRow = 0; headerRow < Math.min(matrix.length, 12); headerRow += 1) {
+      const headerEntries = (matrix[headerRow] || [])
+        .map((value, index) => ({ name: normalize(value), index }))
+        .filter(({ name }) => name)
+      const exactHeaders = headerEntries.map(({ name }) => name)
+      const excelType = detectExcelType(exactHeaders)
+      const formalTypeA = !excelType && headerEntries.some(({ name }) => /^测试内容(?:（必填）|\(必填\))?$/.test(name))
+      if (excelType || formalTypeA) candidates.push({ sheetName, matrix, headerRow, headerEntries, excelType: excelType || 'A' })
+    }
+  }
+  if (!candidates.length) throw createHeaderError([])
+  // Prefer a real Type B/A header over a descriptive/template row.
+  const selected = candidates.find((item) => item.excelType === 'B') || candidates[0]
+  const { matrix, headerRow, headerEntries, excelType } = selected
+  const aliases = excelType === 'A'
+    ? headerEntries.filter(({ name }) => name === '测试内容' || name.startsWith('测试内容'))
+    : headerEntries
+  const contentName = aliases.find(({ name }) => name === '测试内容')?.name ?? aliases[0]?.name
+  const inferredType = /设备信息监视|监视模块/i.test(String(file.name || '')) ? '监视模块' : ''
+  // Type B rows need meaningful test content. Device code is optional, and a
+  // trailing template row can still contain an equipment type; neither should
+  // make that blank row a submitted record.
+  const businessNames = excelType === 'A'
+    ? [contentName]
+    : ['设备中文', '测试内容', '信号描述']
+  const rows = matrix.slice(headerRow + 1)
     .map((row, index) => ({
       sortIndex: index + 1,
       ...Object.fromEntries(headerEntries.map(({ name, index: column }) => [name, normalize(row[column])]))
     }))
+    .filter((row) => {
+      const value = businessNames.map((name) => normalize(row[name])).find(Boolean) || ''
+      return value && value.toLowerCase() !== 'end'
+    })
+    .map((row) => {
+      if (excelType === 'A' && contentName !== '测试内容') row['测试内容'] = row[contentName] || ''
+      if (excelType === 'A' && !row['类型'] && inferredType) row['类型'] = inferredType
+      return row
+    })
+  const headers = headerEntries.map(({ name }) => name)
   return { headers, rows, excelType }
 }
 

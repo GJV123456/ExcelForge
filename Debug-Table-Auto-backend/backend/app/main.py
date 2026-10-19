@@ -17,7 +17,11 @@ from app.db.catalog import CatalogRepository
 from app.db.auth import AuthRepository
 from app.db.generation import GenerationRepository
 from app.exceptions import register_exception_handlers
-from app.resource_paths import resolve_database_path, resolve_frontend_dist_path
+from app.resource_paths import (
+    resolve_catalog_database_path,
+    resolve_database_path,
+    resolve_frontend_dist_path,
+)
 
 
 def _register_frontend(application: FastAPI, settings: Settings) -> None:
@@ -43,8 +47,8 @@ def _register_frontend(application: FastAPI, settings: Settings) -> None:
 def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title="ExcelForge API", version="1.0.0")
     application.state.settings = settings or Settings.from_environment()
-    application.state.catalog_repository = CatalogRepository(
-        resolve_database_path(application.state.settings.database_path)
+    application.state.catalog_database_path = resolve_database_path(
+        application.state.settings.database_path
     )
     application.state.auth_repository = AuthRepository(
         resolve_database_path(application.state.settings.database_path)
@@ -52,6 +56,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.generation_repository = GenerationRepository(
         resolve_database_path(application.state.settings.database_path)
     )
+
+    def catalog_repository_for(integration_code: str = "T19") -> CatalogRepository:
+        return CatalogRepository(
+            resolve_catalog_database_path(
+                application.state.settings.database_path, integration_code
+            ),
+            integration_code,
+        )
+
+    application.state.catalog_repository_for = catalog_repository_for
 
     @application.middleware("http")
     async def add_request_id(request: Request, call_next):  # type: ignore[no-untyped-def]

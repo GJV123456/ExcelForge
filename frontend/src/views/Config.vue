@@ -244,6 +244,16 @@ const displayRuleTitle = (rule) => {
 const enabledDisciplineCount = computed(() => disciplines.value.filter((item) => item.isEnabled).length)
 const automationDisciplineId = computed(() => disciplines.value.find((item) => item.name === '自动化' || item.code?.toUpperCase() === 'AUTOMATION')?.id)
 const editorTitle = computed(() => editorMode.value === 'create' ? '新增测试内容规则' : draft.value?.content || '规则详情')
+const stepMatchBasis = computed(() => {
+  if (!draft.value) return ''
+  const parts = []
+  const typeName = draft.value.equipmentType?.name || selectedEquipment.value?.name
+  if (typeName) parts.push(`设备类型：${typeName}`)
+  if (draft.value.equipmentSubtype) parts.push(`子类型：${draft.value.equipmentSubtype}`)
+  if (draft.value.equipmentStatus) parts.push(`状态/动作：${draft.value.equipmentStatus}`)
+  if (draft.value.content) parts.push(`测试内容关键词：${draft.value.content}`)
+  return parts.join('；') || '暂无匹配条件'
+})
 const isEditing = computed(() => editorMode.value === 'edit' || editorMode.value === 'create')
 // 将当前草稿和进入页面时的快照比较，用于切换规则前提示“未保存”。
 const isDirty = computed(() => {
@@ -1093,7 +1103,7 @@ onMounted(async () => {
                   <div class="tree-heading"><div><h3>操作步骤与输出结果</h3><p>以下为当前规则的完整配置。</p></div></div>
                   <div class="steps-list">
                     <section v-for="(step, stepIndex) in draft.operationSteps" :key="stepIndex" class="step-card readonly-step-card">
-                      <div class="step-heading step-heading-clickable" @click="toggleStepResults(stepIndex)"><span class="step-number">步骤 {{ stepIndex + 1 }}</span><div class="step-heading-summary"><el-tag size="small" effect="plain">是否变比：{{ step.ratioChange }}</el-tag><span class="result-count">{{ step.results.length }} 个输出结果</span><el-icon class="expand-icon" :class="{ expanded: isStepResultsExpanded(stepIndex) }"><ArrowDown /></el-icon></div></div>
+                      <div class="step-heading step-heading-clickable" @click="toggleStepResults(stepIndex)"><span class="step-number">步骤 {{ stepIndex + 1 }} <span class="step-match-basis">（{{ stepMatchBasis }}）</span></span><div class="step-heading-summary"><el-tag size="small" effect="plain">是否变比：{{ step.ratioChange }}</el-tag><span class="result-count">{{ step.results.length }} 个输出结果</span><el-icon class="expand-icon" :class="{ expanded: isStepResultsExpanded(stepIndex) }"><ArrowDown /></el-icon></div></div>
                       <div class="readonly-step-description">{{ step.description }}</div>
                       <div v-if="isStepResultsExpanded(stepIndex)" class="results-list">
                         <article v-for="(result, resultIndex) in step.results" :key="resultIndex" class="result-row readonly-result-row">
@@ -1133,7 +1143,7 @@ onMounted(async () => {
                 <div class="steps-list">
                   <section v-for="(step, stepIndex) in draft.operationSteps" :key="stepIndex" class="step-card">
                     <div class="step-heading step-heading-clickable" @click="toggleStepResults(stepIndex)">
-                      <span class="step-number">步骤 {{ stepIndex + 1 }} <span class="result-count">{{ step.results.length }} 个输出结果</span><el-icon class="expand-icon" :class="{ expanded: isStepResultsExpanded(stepIndex) }"><ArrowDown /></el-icon></span>
+                      <span class="step-number">步骤 {{ stepIndex + 1 }} <span class="step-match-basis">（{{ stepMatchBasis }}）</span> <span class="result-count">{{ step.results.length }} 个输出结果</span><el-icon class="expand-icon" :class="{ expanded: isStepResultsExpanded(stepIndex) }"><ArrowDown /></el-icon></span>
                       <div class="item-actions" @click.stop>
                         <el-button text :icon="ArrowUp" :disabled="stepIndex === 0" title="上移步骤" @click="moveItem(draft.operationSteps, stepIndex, -1)" />
                         <el-button text :icon="ArrowDown" :disabled="stepIndex === draft.operationSteps.length - 1" title="下移步骤" @click="moveItem(draft.operationSteps, stepIndex, 1)" />
@@ -1377,6 +1387,7 @@ onMounted(async () => {
 .step-heading-clickable { cursor: pointer; transition: background .18s ease; }
 .step-heading-clickable:hover { background: #e8f0fc; }
 .step-number { color: #31558d; font-weight: 750; }
+.step-match-basis { color: #73829a; font-size: 12px; font-weight: 500; }
 .step-heading-summary { display: flex; align-items: center; gap: 10px; }
 .result-count { color: #8290a4; font-size: 12px; font-weight: 500; }
 .expand-icon { color: #6b83aa; transition: transform .2s ease; }
