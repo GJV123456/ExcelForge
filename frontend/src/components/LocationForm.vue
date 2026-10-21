@@ -1,14 +1,27 @@
 <script setup>
 import { Delete, Plus } from '@element-plus/icons-vue'
-import { stationOptions } from '../data/stations'
+import { onMounted, ref, watch } from 'vue'
+import { getStations } from '../api/catalog'
+import { useWorkspaceStore } from '../store/workspace'
 import { changeLocationType, changeStation } from '../utils/formalLocation'
 
 const props = defineProps({ modelValue: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue'])
+const workspace = useWorkspaceStore()
+const stationOptions = ref([])
 
+const loadStations = async () => {
+  if (!workspace.selectedLineId) { stationOptions.value = []; return }
+  try {
+    const response = await getStations({ lineId: workspace.selectedLineId })
+    stationOptions.value = (response.data?.data || []).map((station) => ({ value: station.name }))
+  } catch {
+    stationOptions.value = []
+  }
+}
 const queryStations = (query, callback) => {
   const keyword = String(query || '').trim().toLowerCase()
-  const result = keyword ? stationOptions.filter((item) => item.value.toLowerCase().includes(keyword)) : stationOptions
+  const result = keyword ? stationOptions.value.filter((item) => item.value.toLowerCase().includes(keyword)) : stationOptions.value
   callback(result)
 }
 const updateType = (type) => emit('update:modelValue', changeLocationType(props.modelValue, type))
@@ -37,6 +50,9 @@ const removeStationAt = (index) => {
   next.splice(index, 1)
   emit('update:modelValue', { ...props.modelValue, stations: next, startStation: next[0] || '', endStation: next[0] || '' })
 }
+
+onMounted(loadStations)
+watch(() => workspace.selectedLineId, loadStations)
 </script>
 
 <template>

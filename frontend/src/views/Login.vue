@@ -72,7 +72,12 @@ const submit = async () => {
     const responsePayload = data?.data || data
     if (!responsePayload?.token) throw new Error(data?.message || '登录失败')
     syncRememberedLogin()
-    user.setUser(responsePayload.token, responsePayload.userInfo || responsePayload.user || {})
+    user.setUser(responsePayload.token, {
+      ...(responsePayload.userInfo || responsePayload.user || {}),
+      role: responsePayload.role || '',
+      lineId: responsePayload.lineId || null,
+      professionId: responsePayload.professionId || null
+    })
     ElMessage.success(isRegister.value ? '账号创建成功' : '登录成功')
     router.replace(route.query.redirect || '/')
   } catch (error) { ElMessage.error(error.response ? (error.response.data?.detail || error.response.data?.message || '登录失败') : (error.message || '服务器连接失败')) }

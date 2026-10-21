@@ -7,6 +7,7 @@ from datetime import datetime
 
 from app.config import Settings
 from app.db.catalog import CatalogRepository
+from app.db.workspace import WorkspaceRepository
 from app.domain.workbook import (
     FormalWorkbook,
     LocationRow,
@@ -16,7 +17,8 @@ from app.domain.workbook import (
 )
 from app.exceptions import BusinessError
 from app.resource_paths import resolve_catalog_database_path
-from app.schemas.excel import ExcelProcessRequest, FormalTestContent
+from app.schemas.excel import ExcelProcessRequest, FormalTestContent, OperationStep
+from app.schemas.workspace import ScopeSelection
 from app.services.result import XLS_MEDIA_TYPE, ProcessedFile
 from app.utils.formal_workbook import build_formal_workbook
 
@@ -118,7 +120,9 @@ def _build_location(request: ExcelProcessRequest) -> LocationRow:
     return LocationRow(location_type, direction, start_station, end_station, ())
 
 
-def _catalog_steps(item: FormalTestContent, repository: CatalogRepository) -> list[dict[str, object]]:
+def _catalog_steps(
+    item: FormalTestContent, repository: CatalogRepository
+) -> list[dict[str, object]]:
     """Resolve the fixed operation/result hierarchy stored in SQLite.
 
     Resolve rules by equipment type first, then subtype, then status/action.
@@ -140,7 +144,8 @@ def _catalog_steps(item: FormalTestContent, repository: CatalogRepository) -> li
 
     if equipment_subtype and candidates:
         subtype_candidates = [
-            candidate for candidate in candidates
+            candidate
+            for candidate in candidates
             if str(candidate.get("equipmentSubtype", "")).strip().casefold()
             == equipment_subtype.casefold()
         ]
@@ -155,12 +160,11 @@ def _catalog_steps(item: FormalTestContent, repository: CatalogRepository) -> li
             if generic_candidates:
                 candidates = generic_candidates
             elif any(
-                str(candidate.get("equipmentSubtype", "")).strip()
-                for candidate in candidates
+                str(candidate.get("equipmentSubtype", "")).strip() for candidate in candidates
             ):
-            # Do not fall through to another subtype under the same broad
-            # equipment type. That can turn an unsupported ASD reset into an
-            # unrelated 400V cutoff rule, for example.
+                # Do not fall through to another subtype under the same broad
+                # equipment type. That can turn an unsupported ASD reset into an
+                # unrelated 400V cutoff rule, for example.
                 raise BusinessError(
                     f"设备类型“{equipment_type}”下未配置子类型“{equipment_subtype}”的规则",
                     "CATALOG_RULE_NOT_FOUND",
@@ -248,8 +252,7 @@ def _catalog_steps(item: FormalTestContent, repository: CatalogRepository) -> li
         ]
         if content_matches:
             longest_content = max(
-                len(str(candidate["content"]).strip())
-                for candidate in content_matches
+                len(str(candidate["content"]).strip()) for candidate in content_matches
             )
             best_matches = [
                 candidate
@@ -315,8 +318,7 @@ def _infer_electric_damper_statuses(
         subtype = item.equipment_subtype.strip()
         source = " ".join(_source_values(item)).casefold()
         is_electric_damper = subtype == "电动防火阀" or (
-            item.equipment_type.strip() == "防火阀"
-            and "ff2" in item.equipment_code.casefold()
+            item.equipment_type.strip() == "防火阀" and "ff2" in item.equipment_code.casefold()
         )
         if not is_electric_damper:
             continue
@@ -332,38 +334,112 @@ def _infer_electric_damper_statuses(
             continue
         if "动作状态" in source or "关控制命令" in source:
             continue
-        contents[index]["equipmentStatus"] = (
-            "动作状态" if occurrence % 2 == 0 else "关控制命令"
-        )
+        contents[index]["equipmentStatus"] = "动作状态" if occurrence % 2 == 0 else "关控制命令"
 
 
-def prepare_formal_request(
-    request: ExcelProcessRequest, settings: Settings
-) -> ExcelProcessRequest:
+def prepare_formal_request(request: ExcelProcessRequest, settings: Settings) -> ExcelProcessRequest:
     """Fill omitted operationSteps from the SQLite rule catalog."""
+    request = _resolve_workspace_configs(request, settings)
     if all(content.operation_steps for content in request.test_contents):
         return request
     repository = CatalogRepository(
-        resolve_catalog_database_path(
-            settings.database_path, request.integration_code
-        ),
+        resolve_catalog_database_path(settings.database_path, request.integration_code),
         request.integration_code,
     )
     payload = request.model_dump(by_alias=True)
     contents = payload["testContents"]
     assert isinstance(contents, list)
     _infer_electric_damper_statuses(request, contents)
+    unmatched_legacy: list[str] = []
     for index, content in enumerate(request.test_contents):
         if content.operation_steps:
             continue
         resolved_content = content
         resolved_status = str(contents[index].get("equipmentStatus", "")).strip()
         if resolved_status != content.equipment_status.strip():
-            resolved_content = content.model_copy(
-                update={"equipment_status": resolved_status}
-            )
-        contents[index]["operationSteps"] = _catalog_steps(resolved_content, repository)
+            resolved_content = content.model_copy(update={"equipment_status": resolved_status})
+        try:
+            steps = _catalog_steps(resolved_content, repository)
+        except BusinessError as error:
+            if error.code != "CATALOG_RULE_NOT_FOUND":
+                raise
+            steps = []
+        if not steps:
+            label = content.equipment_code.strip() or content.equipment_chinese.strip() or f"第 {index + 1} 行"
+            unmatched_legacy.append(f"{index + 1}（{label}）")
+            continue
+        contents[index]["operationSteps"] = steps
+    if unmatched_legacy:
+        raise BusinessError(
+            "以下数据行没有填写联调配置编码，且未匹配到现有 FAS 兼容规则："
+            + "、".join(unmatched_legacy)
+            + "。请为这些行填写有效编码，或先在原有设备与测试规则中补齐规则。",
+            "WORKSPACE_LEGACY_CONFIG_UNMATCHED",
+            status_code=422,
+        )
     return ExcelProcessRequest.model_validate(payload)
+
+
+def _resolve_workspace_configs(
+    request: ExcelProcessRequest, settings: Settings
+) -> ExcelProcessRequest:
+    """Resolve the explicit 联调配置编码 before legacy catalog matching.
+
+    The legacy FAS keyword matcher remains the fallback when the new column is
+    empty.  A non-empty but invalid explicit code is always an error so a typo
+    cannot silently select an unrelated legacy rule.
+    """
+    codes = [item.integration_config_code.strip() for item in request.test_contents]
+    if not any(codes):
+        return request
+    if not (request.line_id and request.profession_id and request.project_id):
+        raise BusinessError(
+            "使用联调配置编码时必须先选择线路、专业和联调项目",
+            "WORKSPACE_SCOPE_REQUIRED",
+        )
+    repository = WorkspaceRepository(resolve_catalog_database_path(settings.database_path, "T19"))
+    selection = ScopeSelection(
+        lineId=request.line_id,
+        professionId=request.profession_id,
+        projectId=request.project_id,
+    )
+    resolved_contents = list(request.test_contents)
+    for index, code in enumerate(codes):
+        if not code:
+            continue
+        config = repository.resolve_config(selection, code)
+        if config is None:
+            raise BusinessError(
+                f"第 {index + 1} 行的联调配置编码“{code}”不存在、未发布或已停用",
+                "WORKSPACE_CONFIG_UNMATCHED",
+                path=["testContents", index, "integrationConfigCode"],
+            )
+        steps = []
+        for step in config["steps"]:
+            results = []
+            for result in step["results"]:
+                disciplines = result.get("responsibleDisciplines") or ["自动化"]
+                results.append(
+                    {"description": result["description"], "responsibleDisciplines": disciplines}
+                )
+            if not results:
+                raise BusinessError("联调配置未配置输出结果", "WORKSPACE_CONFIG_INCOMPLETE")
+            steps.append(
+                {
+                    "description": step["description"],
+                    "ratioChange": step["ratioChange"],
+                    "results": results,
+                }
+            )
+        if not steps:
+            raise BusinessError("联调配置未配置操作步骤", "WORKSPACE_CONFIG_INCOMPLETE")
+        resolved_contents[index] = request.test_contents[index].model_copy(
+            update={"operation_steps": [OperationStep.model_validate(step) for step in steps]}
+        )
+    # Rows with a blank code may still be resolved by the legacy matcher below.
+    # Revalidating the whole request here would reject their temporarily empty
+    # operationSteps and turn a useful row-specific 422 into an internal error.
+    return request.model_copy(update={"test_contents": resolved_contents})
 
 
 def _validate_sort_indexes(request: ExcelProcessRequest) -> None:
@@ -520,8 +596,7 @@ def _filename_profile(request: ExcelProcessRequest) -> tuple[str, str, str]:
     classified_subtypes = {
         content.equipment_subtype.strip()
         for content in request.test_contents
-        if content.equipment_subtype.strip()
-        in {"区间电话", "站内电话"}
+        if content.equipment_subtype.strip() in {"区间电话", "站内电话"}
     }
     if len(classified_subtypes) == 1:
         subtype = next(iter(classified_subtypes))
@@ -558,8 +633,10 @@ def _filename_profile(request: ExcelProcessRequest) -> tuple[str, str, str]:
 def _formal_filename(
     request: ExcelProcessRequest, workbook: FormalWorkbook, generated_at: datetime
 ) -> str:
-    station = workbook.location.stations[0] if workbook.location.stations else (
-        workbook.location.start_station or workbook.location.location_type
+    station = (
+        workbook.location.stations[0]
+        if workbook.location.stations
+        else (workbook.location.start_station or workbook.location.location_type)
     )
     number, function, device = _filename_profile(request)
     components = [
@@ -582,10 +659,5 @@ def process_formal_request(
     request = prepare_formal_request(request, settings)
     workbook = _build_workbook(request)
     content = build_formal_workbook(workbook, settings.template_path)
-    filename = _formal_filename(
-        request, workbook, generated_at or datetime.now().astimezone()
-    )
+    filename = _formal_filename(request, workbook, generated_at or datetime.now().astimezone())
     return ProcessedFile(content=content, filename=filename, media_type=XLS_MEDIA_TYPE)
-
-
-

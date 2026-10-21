@@ -42,14 +42,19 @@ class FormalTestContent(ApiModel):
     equipment_subtype: StrictText = Field(default="", alias="equipmentSubtype", max_length=32_767)
     equipment_status: StrictText = Field(default="", alias="equipmentStatus", max_length=32_767)
     interval_name: StrictText = Field(default="", alias="intervalName", max_length=32_767)
-    operation_steps: Annotated[
-        list[OperationStep], Field(alias="operationSteps", min_length=1)
-    ] = Field(default_factory=list)
+    integration_config_code: StrictText = Field(
+        default="", alias="integrationConfigCode", max_length=512
+    )
+    operation_steps: Annotated[list[OperationStep], Field(alias="operationSteps", min_length=1)] = (
+        Field(default_factory=list)
+    )
 
 
 class ExcelProcessRequest(ApiModel):
     integration_code: IntegrationCode = Field(default="T19", alias="integrationCode")
     source_filename: StrictText = Field(default="", alias="sourceFilename", max_length=512)
     test_location: TestLocation = Field(alias="testLocation")
+    line_id: int | None = Field(default=None, alias="lineId", gt=0)
+    profession_id: int | None = Field(default=None, alias="professionId", gt=0)
+    project_id: int | None = Field(default=None, alias="projectId", gt=0)
     test_contents: Annotated[list[FormalTestContent], Field(alias="testContents", min_length=1)]
-

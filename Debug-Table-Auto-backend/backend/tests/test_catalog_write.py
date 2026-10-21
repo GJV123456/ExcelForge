@@ -10,7 +10,14 @@ from app.main import create_app
 
 
 def _client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "catalog.sqlite3")))
+    client = TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "catalog.sqlite3")))
+    response = client.post(
+        "/api/auth/register",
+        json={"username": "admin", "password": "secret123", "confirmPassword": "secret123", "displayName": "管理员", "agree": True},
+    )
+    if response.status_code == 200:
+        client.headers.update({"Authorization": f"Bearer {response.json()['data']['token']}"})
+    return client
 
 
 def test_catalog_write_cycle(tmp_path: Path) -> None:

@@ -23,6 +23,13 @@ export const getApiErrorMessage = async (error) => {
   try {
     const data = await parseData(error.response.data)
     if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail
+    if (Array.isArray(data?.detail) && data.detail.length) {
+      return data.detail.map((item) => {
+        const field = Array.isArray(item.loc) ? item.loc.filter((part) => !['body', 'query', 'path'].includes(part)).join('.') : ''
+        const reason = String(item.msg || '参数无效').replace(/^Value error,\s*/i, '')
+        return field ? `${field}：${reason}` : reason
+      }).join('；')
+    }
   } catch {
     // Fall through to the status-specific public message.
   }

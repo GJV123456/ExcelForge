@@ -118,6 +118,86 @@ def test_rejects_undefined_location_values() -> None:
     assert response.json()["code"] == "INVALID_LOCATION_TYPE"
 
 
+def test_mixed_blank_and_explicit_workspace_codes_report_unmatched_legacy_rows() -> None:
+    with _formal_client() as client:
+        registered = client.post(
+            "/api/auth/register",
+            json={
+                "username": "admin",
+                "password": "secret123",
+                "confirmPassword": "secret123",
+                "displayName": "管理员",
+                "agree": True,
+            },
+        )
+        headers = {"Authorization": f"Bearer {registered.json()['data']['token']}"}
+        context = client.get("/api/workspace/context", headers=headers).json()["data"]
+        scope = {
+            "lineId": context["lines"][0]["id"],
+            "professionId": context["professions"][0]["id"],
+            "projectId": context["projects"][0]["id"],
+        }
+        created = client.post(
+            "/api/workspace/configs",
+            headers=headers,
+            json={
+                "scope": scope,
+                "configCode": "FAS-垂梯-测试",
+                "deviceType": "监视模块",
+                "steps": [
+                    {
+                        "description": "测试状态反馈",
+                        "ratioChange": "否",
+                        "results": [
+                            {"description": "正确显示状态", "responsibleDisciplines": ["自动化"]}
+                        ],
+                    }
+                ],
+            },
+        )
+        assert created.status_code == 200, created.text
+        payload = {
+            "integrationCode": "T19",
+            "lineId": scope["lineId"],
+            "professionId": scope["professionId"],
+            "projectId": scope["projectId"],
+            "testLocation": {
+                "type": "站点",
+                "direction": "",
+                "startStation": "角江路站",
+                "endStation": "角江路站",
+            },
+            "testContents": [
+                {
+                    "sortIndex": index,
+                    "generatedContent": text,
+                    "equipmentCode": f"N1L6M{54 + index}",
+                    "equipmentType": "监视模块" if index % 2 else "控制模块",
+                    "equipmentChinese": text,
+                    "equipmentSubtype": "",
+                    "equipmentStatus": "",
+                    **({"integrationConfigCode": "FAS-垂梯-测试"} if index == 5 else {}),
+                }
+                for index, text in enumerate(
+                    [
+                        "3号出入口垂直电梯状态反馈",
+                        "3号出入口垂直电梯归首控制",
+                        "站厅公共区垂直电梯状态反馈",
+                        "站厅公共区垂直电梯归首控制",
+                        "站厅公共区垂直电梯状态反馈666",
+                    ],
+                    start=1,
+                )
+            ],
+        }
+        response = client.post("/api/excel/process", headers=headers, json=payload)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "WORKSPACE_LEGACY_CONFIG_UNMATCHED"
+    assert "N1L6M55" in response.json()["detail"]
+    assert "N1L6M58" in response.json()["detail"]
+
+
 def test_requires_matching_station_endpoints() -> None:
     missing = _payload()
     mismatch = _payload()

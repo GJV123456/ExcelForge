@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from app.db.catalog import CatalogRepository
 from app.exceptions import BusinessError
@@ -16,6 +16,9 @@ class AuthUser(TypedDict):
     id: int
     username: str
     displayName: str
+    role: NotRequired[str]
+    lineId: NotRequired[int | None]
+    professionId: NotRequired[int | None]
 
 
 class AuthRepository:
@@ -24,6 +27,12 @@ class AuthRepository:
 
     def ensure_schema(self) -> None:
         self.database.ensure_schema()
+        # The workspace extension owns role and scope columns.  Keep this
+        # call local to avoid an import cycle while ensuring old databases are
+        # upgraded before authentication reads those columns.
+        from app.db.workspace import WorkspaceRepository
+
+        WorkspaceRepository(self.database.database_path).ensure_schema()
 
     def count_users(self) -> int:
         self.ensure_schema()
@@ -35,22 +44,30 @@ class AuthRepository:
         self.ensure_schema()
         with closing(self.database._connect()) as connection:
             row = connection.execute(
-                "SELECT id, username, display_name FROM auth_users "
+                "SELECT id, username, display_name, role, line_id, profession_id FROM auth_users "
                 "WHERE username = ? COLLATE NOCASE AND is_enabled = 1",
                 (username,),
             ).fetchone()
         return self._user(row) if row else None
 
-    def create_user(self, username: str, password: str, display_name: str) -> AuthUser:
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        display_name: str,
+        role: str = "super_admin",
+        line_id: int | None = None,
+        profession_id: int | None = None,
+    ) -> AuthUser:
         self.ensure_schema()
         try:
             with closing(self.database._connect()) as connection, connection:
                 cursor = connection.execute(
                     """
-                    INSERT INTO auth_users(username, password_hash, display_name)
-                    VALUES (?, ?, ?)
+                    INSERT INTO auth_users(username, password_hash, display_name, role, line_id, profession_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (username, hash_password(password), display_name),
+                    (username, hash_password(password), display_name, role, line_id, profession_id),
                 )
                 user_id = int(cursor.lastrowid)
         except sqlite3.IntegrityError as error:
@@ -63,7 +80,7 @@ class AuthRepository:
         self.ensure_schema()
         with closing(self.database._connect()) as connection:
             row = connection.execute(
-                "SELECT id, username, password_hash, display_name FROM auth_users "
+                "SELECT id, username, password_hash, display_name, role, line_id, profession_id FROM auth_users "
                 "WHERE username = ? COLLATE NOCASE AND is_enabled = 1",
                 (username,),
             ).fetchone()
@@ -96,7 +113,7 @@ class AuthRepository:
         with closing(self.database._connect()) as connection:
             row = connection.execute(
                 """
-                SELECT u.id, u.username, u.display_name, s.expires_at
+                SELECT u.id, u.username, u.display_name, u.role, u.line_id, u.profession_id, s.expires_at
                 FROM auth_sessions AS s JOIN auth_users AS u ON u.id = s.user_id
                 WHERE s.token_hash = ? AND s.revoked_at IS NULL AND u.is_enabled = 1
                 """,
@@ -144,8 +161,15 @@ class AuthRepository:
 
     @staticmethod
     def _user(row: sqlite3.Row) -> AuthUser:
-        return {
+        user: AuthUser = {
             "id": int(row["id"]),
             "username": str(row["username"]),
             "displayName": str(row["display_name"]),
         }
+        if "role" in row.keys():
+            user["role"] = str(row["role"] or "professional_configurator")
+            user["lineId"] = int(row["line_id"]) if row["line_id"] is not None else None
+            user["professionId"] = (
+                int(row["profession_id"]) if row["profession_id"] is not None else None
+            )
+        return user

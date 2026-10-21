@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Annotated
 import re
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
+from app.db.auth import AuthRepository
 from app.db.catalog import CatalogRepository
 from app.exceptions import BusinessError
 from app.schemas.catalog import (
@@ -24,7 +25,57 @@ from app.schemas.catalog import (
     TestContentWriteRequest,
 )
 
-router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+def _require_catalog_access(request: Request) -> None:
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        raise BusinessError("登录状态已失效，请重新登录", "AUTH_UNAUTHORIZED", status_code=401)
+    repository = request.app.state.auth_repository
+    user = AuthRepository(repository.database.database_path).get_user_by_token(authorization[7:].strip())
+    if user is None:
+        raise BusinessError("登录状态已失效，请重新登录", "AUTH_UNAUTHORIZED", status_code=401)
+    if request.url.path.rstrip("/").endswith("/stations") or "/stations/" in request.url.path:
+        line_id_raw = request.query_params.get("lineId")
+        try:
+            target_line_id = int(line_id_raw or "")
+        except ValueError as error:
+            raise BusinessError("请选择线路后再管理站点", "WORKSPACE_SCOPE_REQUIRED") from error
+        if user.get("role") == "super_admin":
+            return
+        own_line_id = user.get("lineId")
+        if target_line_id != own_line_id or user.get("role") != "line_admin":
+            raise BusinessError("当前账号无权管理该线路站点", "CATALOG_FORBIDDEN", status_code=403)
+        if request.method in {"POST", "PUT", "DELETE"}:
+            return
+        return
+    role = user.get("role")
+    if role == "super_admin":
+        return
+    with repository.database._connect() as connection:
+        line = connection.execute(
+            "SELECT id FROM workspace_lines WHERE code = '9' COLLATE NOCASE"
+        ).fetchone()
+        profession = connection.execute(
+            "SELECT id FROM workspace_professions WHERE code = 'ZDH' COLLATE NOCASE"
+        ).fetchone()
+    allowed_line_id = int(line[0]) if line else None
+    allowed_profession_id = int(profession[0]) if profession else None
+    allowed = (
+        role == "line_admin"
+        and user.get("lineId") == allowed_line_id
+        and request.query_params.get("lineId") == str(allowed_line_id)
+        and request.query_params.get("professionId") == str(allowed_profession_id)
+    ) or (
+        role == "professional_configurator"
+        and user.get("lineId") == allowed_line_id
+        and user.get("professionId") == allowed_profession_id
+        and request.query_params.get("lineId") == str(allowed_line_id)
+        and request.query_params.get("professionId") == str(allowed_profession_id)
+    )
+    if not allowed:
+        raise BusinessError("当前账号无权查看或编辑原有设备与测试规则", "CATALOG_FORBIDDEN", status_code=403)
+
+
+router = APIRouter(prefix="/api/catalog", tags=["catalog"], dependencies=[Depends(_require_catalog_access)])
 
 
 def _repository(request: Request) -> CatalogRepository:
@@ -98,28 +149,40 @@ def list_disciplines(
 def list_stations(
     request: Request,
     include_disabled: Annotated[bool, Query(alias="includeDisabled")] = False,
+    line_id: Annotated[int, Query(alias="lineId", gt=0)] = 0,
 ) -> StationListResponse:
-    data = _repository(request).list_stations(include_disabled=include_disabled)
+    if line_id <= 0:
+        raise BusinessError("请选择线路后再加载站点", "WORKSPACE_SCOPE_REQUIRED")
+    data = _repository(request).list_stations(line_id=line_id, include_disabled=include_disabled)
     return {"data": data, "meta": {"count": len(data)}}
 
 
 @router.post("/stations")
 def create_station(
-    payload: StationWriteRequest, request: Request
+    payload: StationWriteRequest,
+    request: Request,
+    line_id: Annotated[int, Query(alias="lineId", gt=0)],
 ) -> dict[str, object]:
-    return {"data": _repository(request).create_station(payload)}
+    return {"data": _repository(request).create_station(line_id, payload)}
 
 
 @router.put("/stations/{station_id}")
 def update_station(
-    station_id: int, payload: StationWriteRequest, request: Request
+    station_id: int,
+    payload: StationWriteRequest,
+    request: Request,
+    line_id: Annotated[int, Query(alias="lineId", gt=0)],
 ) -> dict[str, object]:
-    return {"data": _repository(request).update_station(station_id, payload)}
+    return {"data": _repository(request).update_station(station_id, line_id, payload)}
 
 
 @router.delete("/stations/{station_id}", status_code=204)
-def delete_station(station_id: int, request: Request) -> Response:
-    _repository(request).delete_station(station_id)
+def delete_station(
+    station_id: int,
+    request: Request,
+    line_id: Annotated[int, Query(alias="lineId", gt=0)],
+) -> Response:
+    _repository(request).delete_station(station_id, line_id)
     return Response(status_code=204)
 
 

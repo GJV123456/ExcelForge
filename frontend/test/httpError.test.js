@@ -19,3 +19,13 @@ test('distinguishes network and validation errors', async () => {
   assert.equal(await getApiErrorMessage(new Error('offline')), '服务器连接失败')
   assert.equal(await getApiErrorMessage({ response: { status: 422, data: new Blob([]) } }), '提交参数校验失败')
 })
+
+test('shows field-level FastAPI validation details', async () => {
+  const error = {
+    response: {
+      status: 422,
+      data: { detail: [{ loc: ['body', 'steps', 0, 'results'], msg: 'Field required' }] }
+    }
+  }
+  assert.equal(await getApiErrorMessage(error), 'steps.0.results：Field required')
+})

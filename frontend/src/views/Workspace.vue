@@ -8,6 +8,7 @@ import RuleBuilder from '../components/RuleBuilder.vue'
 import ExcelPreview from '../components/ExcelPreview.vue'
 import LoadingDialog from '../components/LoadingDialog.vue'
 import { useExcelStore } from '../store/excel'
+import { useWorkspaceStore } from '../store/workspace'
 import { buildContent, extractEquipmentCode } from '../utils/excelParser'
 import { deriveEquipmentClassification, inferElectricDamperStatus } from '../utils/equipmentSubtype'
 import { downloadGeneration, getGeneration, getGenerations, processExcel } from '../api/excel'
@@ -15,9 +16,11 @@ import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
 import { buildTestLocation, validateFormalLocation } from '../utils/formalLocation'
 import { integrationProjects } from '../data/integrations'
-import { stationOptions } from '../data/stations'
+import { getWorkspaceConfigs } from '../api/workspace'
+import WorkspaceScopePicker from '../components/WorkspaceScopePicker.vue'
 
 const excel = useExcelStore()
+const workspace = useWorkspaceStore()
 const loading = ref(false)
 const historyLoading = ref(false)
 const history = ref([])
@@ -26,23 +29,28 @@ const visibleHistory = computed(() => historyExpanded.value ? history.value : hi
 const historyDetailLoading = ref(false)
 const historyDetailVisible = ref(false)
 const historyDetail = ref(null)
+const workspaceConfigs = ref([])
 const integrationOptions = integrationProjects
 const selectedIntegration = computed({
   get: () => excel.selectedIntegration,
   set: (value) => excel.setIntegration(value)
 })
-const selectedProject = computed(() => integrationOptions.find((item) => item.code === selectedIntegration.value))
-const isT19Selected = computed(() => selectedIntegration.value === 'T19')
-const isIntegrationSelected = computed(() => Boolean(selectedProject.value))
+const selectedProject = computed(() => {
+  const project = workspace.selectedProject
+  if (!project) return null
+  const legacy = integrationOptions.find((item) => item.code === (project.engineCode || project.code))
+  return { ...project, code: project.engineCode || project.code, classificationProfile: legacy?.classificationProfile }
+})
+const isT19Selected = computed(() => Boolean(selectedProject.value?.engineCode === 'T19' || selectedProject.value?.code === 'T19'))
+const isIntegrationSelected = computed(() => workspace.isSelected)
 // 默认按站点测试，并使用站点基础资料中的第一个站点作为开始/结束站点。
 // 这样打开工作台后地点配置即可直接使用，同时仍可由用户修改。
-const defaultStation = stationOptions[0]?.value || ''
 const location = reactive({
   type: '站点',
   direction: '',
-  startStation: defaultStation,
-  endStation: defaultStation,
-  stations: defaultStation ? [defaultStation] : ['']
+  startStation: '',
+  endStation: '',
+  stations: ['']
 })
 const locationValue = computed({ get: () => location, set: (value) => Object.assign(location, value) })
 const submitLabel = computed(() => loading.value ? '正在生成正式文件...' : '生成正式文件')
@@ -88,14 +96,39 @@ const baseTestContents = computed(() => {
       generatedContent: excel.excelType === 'B' ? buildContent(row, excel.rules) : (row['测试内容'] || '[空]'),
       equipmentCode,
       equipmentType,
+      integrationConfigCode: row['联调配置编码'] || '',
       ...classification,
       ...(equipmentStatus ? { equipmentStatus } : {})
     }
   })
 })
 const preview = computed(() => baseTestContents.value.slice(0, 5).map(({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName }) => ({ sortIndex, generatedContent, equipmentType, equipmentSubtype, equipmentStatus, intervalName })))
+const matchStats = computed(() => {
+  const total = excel.rows.length
+  const byCode = new Map()
+  workspaceConfigs.value.forEach((item) => {
+    byCode.set(String(item.configCode).trim().toLowerCase(), item)
+    ;(item.aliases || []).forEach((alias) => byCode.set(String(alias).trim().toLowerCase(), item))
+  })
+  let matched = 0; let unmatched = 0; let disabled = 0
+  excel.rows.forEach((row) => {
+    const code = String(row['联调配置编码'] || '').trim().toLowerCase()
+    if (!code) return
+    const item = byCode.get(code)
+    if (!item) unmatched += 1
+    else if (!item.isEnabled) disabled += 1
+    else matched += 1
+  })
+  if (!excel.rows.some((row) => String(row['联调配置编码'] || '').trim()) && isT19Selected.value) matched = total
+  return { total, matched, unmatched, disabled }
+})
 
 watch(preview, (value) => excel.setPreview(value), { immediate: true })
+const loadWorkspaceConfigs = async () => {
+  if (!workspace.isSelected) return
+  try { workspaceConfigs.value = (await getWorkspaceConfigs({ lineId: workspace.selectedLineId, professionId: workspace.selectedProfessionId, projectId: workspace.selectedProjectId, includeDisabled: true })).data?.data || [] } catch { workspaceConfigs.value = [] }
+}
+watch(() => [workspace.selectedLineId, workspace.selectedProfessionId, workspace.selectedProjectId], loadWorkspaceConfigs, { immediate: true })
 
 const parsed = ({ file, excelType, headers, rows }) => {
   excel.setExcel({ file, excelType, headers, rows })
@@ -176,6 +209,9 @@ const submit = async () => {
   try {
     const response = await processExcel({
       integrationCode: selectedIntegration.value,
+      lineId: workspace.selectedLineId,
+      professionId: workspace.selectedProfessionId,
+      projectId: workspace.selectedProjectId,
       sourceFilename: excel.file?.name || '',
       testLocation: buildTestLocation(location),
       testContents
@@ -199,22 +235,16 @@ watch(selectedIntegration, (value) => {
 
 <template>
   <div class="workspace">
-    <div class="page-title">
+    <div class="page-title workspace-title">
       <div><h1>测试内容生成工作台</h1><p>上传 Excel，配置规则，生成系统可导入的正式文件。</p></div>
-      <div class="integration-picker">
-        <span class="integration-picker-label">联调项目</span>
-        <el-select v-model="selectedIntegration" class="integration-select" clearable placeholder="请选择联调项目" aria-label="选择联调项目">
-        <el-option v-for="item in integrationOptions" :key="item.code" :label="item.name" :value="item.code" />
-        </el-select>
-        <span class="integration-picker-hint">{{ selectedProject?.description || '生成文档属于具体联调项目的子系统' }}</span>
-      </div>
+      <WorkspaceScopePicker compact />
     </div>
     <el-collapse-transition>
       <div v-if="isIntegrationSelected" class="integration-content">
         <div class="integration-banner"><strong>{{ selectedProject?.name }}</strong><span>当前联调项目</span></div>
         <template v-if="isT19Selected">
         <el-card class="section-card"><template #header><b>1. 测试地点配置</b></template><LocationForm v-model="locationValue" /></el-card>
-        <el-card class="section-card"><template #header><b>2. Excel 上传与解析</b></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /></el-card>
+        <el-card class="section-card"><template #header><b>2. Excel 上传与解析</b></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /><div v-if="excel.excelType && excel.headers.includes('联调配置编码')" class="match-stats"><span>源数据共：<b>{{ matchStats.total }}</b> 条</span><span class="stat-success">已匹配：<b>{{ matchStats.matched }}</b> 条</span><span class="stat-warning">未匹配：<b>{{ matchStats.unmatched }}</b> 条</span><span class="stat-muted">配置已停用：<b>{{ matchStats.disabled }}</b> 条</span></div></el-card>
         <el-card v-if="excel.excelType === 'B'" class="section-card"><template #header><b>3. 测试内容生成规则</b></template><RuleBuilder v-model="excel.rules" :available-fields="excel.headers" /></el-card>
         <el-card v-if="excel.excelType" class="section-card"><template #header><b>{{ excel.excelType === 'B' ? '实时预览（前 5 条）' : 'Excel 数据预览（前 5 条）' }}</b></template><ExcelPreview :rows="excel.rows" :excel-type="excel.excelType" :preview="preview" /></el-card>
         <div v-if="excel.excelType" class="submit-panel"><el-button class="submit-button" type="primary" size="large" :icon="DocumentAdd" :loading="loading" :disabled="loading" @click="submit">{{ submitLabel }}</el-button></div>
@@ -260,3 +290,14 @@ watch(selectedIntegration, (value) => {
     <LoadingDialog :visible="loading" />
   </div>
 </template>
+
+<style scoped>
+.workspace-title { gap: 18px; }
+@media (max-width: 760px) { .workspace-title { align-items: flex-start; flex-direction: column; gap: 10px; } }
+.match-stats { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; color: #62728a; font-size: 13px; }
+.match-stats span { padding: 7px 11px; border: 1px solid #e4eaf3; border-radius: 7px; background: #f8fbff; }
+.match-stats b { color: #2f486e; }
+.match-stats .stat-success b { color: #2f9568; }
+.match-stats .stat-warning b { color: #c37b25; }
+.match-stats .stat-muted b { color: #8b97a8; }
+</style>

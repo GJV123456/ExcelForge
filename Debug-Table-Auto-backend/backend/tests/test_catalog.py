@@ -11,7 +11,14 @@ from app.main import create_app
 
 
 def _client(database_path: Path) -> TestClient:
-    return TestClient(create_app(Settings(mode="formal", database_path=database_path)))
+    client = TestClient(create_app(Settings(mode="formal", database_path=database_path)))
+    response = client.post(
+        "/api/auth/register",
+        json={"username": "admin", "password": "secret123", "confirmPassword": "secret123", "displayName": "管理员", "agree": True},
+    )
+    if response.status_code == 200:
+        client.headers.update({"Authorization": f"Bearer {response.json()['data']['token']}"})
+    return client
 
 
 def _seed_catalog(database_path: Path) -> None:
@@ -256,6 +263,7 @@ def test_catalog_migrates_t19_door_release_names_to_door_access(tmp_path: Path) 
     repository.ensure_schema()
     with sqlite3.connect(database_path) as connection:
         connection.execute("DELETE FROM schema_migrations WHERE version = 9")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 10")
         connection.executemany(
             "INSERT INTO equipment_types(code, name, integration_code) VALUES (?, ?, 'T19')",
             [
@@ -528,6 +536,53 @@ def test_catalog_data_isolated_by_integration_database(tmp_path: Path) -> None:
     assert any(item["code"] == "ONLY_T20" for item in t20.json()["data"])
     assert all(item["code"] != "ONLY_T20" for item in t19.json()["data"])
     assert (tmp_path / "catalog.T20.sqlite3").is_file()
+
+
+def test_legacy_catalog_is_limited_to_nine_line_automation_accounts(tmp_path: Path) -> None:
+    database_path = tmp_path / "catalog.sqlite3"
+    with _client(database_path) as client:
+        with sqlite3.connect(database_path) as connection:
+            line_id = connection.execute(
+                "SELECT id FROM workspace_lines WHERE code = '9' COLLATE NOCASE"
+            ).fetchone()[0]
+            profession_id = connection.execute(
+                "SELECT id FROM workspace_professions WHERE code = 'ZDH' COLLATE NOCASE"
+            ).fetchone()[0]
+            connection.execute(
+                "INSERT INTO workspace_lines(code, name) VALUES ('10', '10号线')"
+            )
+            other_line_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "INSERT INTO workspace_professions(code, name) VALUES ('TX', '通信')"
+            )
+            other_profession_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+            connection.execute(
+                "UPDATE auth_users SET role = 'line_admin', line_id = ? WHERE username = 'admin'",
+                (line_id,),
+            )
+
+        permitted_scope = {"lineId": line_id, "professionId": profession_id}
+        assert client.get("/api/catalog/equipment-types", params=permitted_scope).status_code == 200
+        assert client.get(
+            "/api/catalog/equipment-types",
+            params={"lineId": other_line_id, "professionId": profession_id},
+        ).status_code == 403
+        assert client.get(
+            "/api/catalog/equipment-types",
+            params={"lineId": line_id, "professionId": other_profession_id},
+        ).status_code == 403
+
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "UPDATE auth_users SET role = 'professional_configurator', profession_id = ? WHERE username = 'admin'",
+                (profession_id,),
+            )
+            connection.commit()
+        assert client.get("/api/catalog/equipment-types", params=permitted_scope).status_code == 200
+        assert client.get(
+            "/api/catalog/equipment-types",
+            params={"lineId": other_line_id, "professionId": profession_id},
+        ).status_code == 403
 
 
 

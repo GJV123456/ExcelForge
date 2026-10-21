@@ -1,10 +1,13 @@
 import request from '../utils/request'
 import { useExcelStore } from '../store/excel'
+import { useWorkspaceStore } from '../store/workspace'
 
 // 目录 API 按当前联调项目选择独立的后端目录数据库。
 const integrationParams = (params = {}) => ({
   ...params,
-  integrationCode: useExcelStore().selectedIntegration || 'T19'
+  integrationCode: useExcelStore().selectedIntegration || 'T19',
+  lineId: useWorkspaceStore().selectedLineId,
+  professionId: useWorkspaceStore().selectedProfessionId
 })
 const scoped = (data) => [data, { params: integrationParams() }]
 const scopedConfig = () => ({ params: integrationParams() })

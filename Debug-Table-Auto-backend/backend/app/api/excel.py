@@ -17,6 +17,10 @@ router = APIRouter(prefix="/api", tags=["excel"])
 def process_excel(payload: ExcelProcessRequest, request: Request) -> Response:
     generated_at = datetime.now().astimezone()
     settings = request.app.state.settings
+    if payload.project_id:
+        engine_code = request.app.state.workspace_repository.project_engine_code(payload.project_id)
+        if engine_code:
+            payload = payload.model_copy(update={"integration_code": engine_code})
     resolved_payload = prepare_formal_request(payload, settings)
     result = process_formal_request(
         resolved_payload,
@@ -41,4 +45,3 @@ def process_excel(payload: ExcelProcessRequest, request: Request) -> Response:
             "X-Generation-ID": generation_id,
         },
     )
-

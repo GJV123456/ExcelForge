@@ -12,10 +12,12 @@ from app.api.catalog import router as catalog_router
 from app.api.health import router as health_router
 from app.api.generation import router as generation_router
 from app.api.excel import router as excel_router
+from app.api.workspace import router as workspace_router
 from app.config import Settings
 from app.db.catalog import CatalogRepository
 from app.db.auth import AuthRepository
 from app.db.generation import GenerationRepository
+from app.db.workspace import WorkspaceRepository
 from app.exceptions import register_exception_handlers
 from app.resource_paths import (
     resolve_catalog_database_path,
@@ -56,6 +58,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.generation_repository = GenerationRepository(
         resolve_database_path(application.state.settings.database_path)
     )
+    application.state.workspace_repository = WorkspaceRepository(
+        resolve_database_path(application.state.settings.database_path)
+    )
+    application.state.workspace_repository.ensure_schema()
 
     def catalog_repository_for(integration_code: str = "T19") -> CatalogRepository:
         return CatalogRepository(
@@ -81,9 +87,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(generation_router)
     application.include_router(health_router)
     application.include_router(excel_router)
+    application.include_router(workspace_router)
     _register_frontend(application, application.state.settings)
     return application
 
 
 app = create_app()
-

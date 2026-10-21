@@ -1,15 +1,20 @@
 <script setup>
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
 import { useExcelStore } from '../store/excel'
+import { useWorkspaceStore } from '../store/workspace'
 import { getIntegrationProject } from '../data/integrations'
 import { changePassword, logout as logoutRequest } from '../api/auth'
 import { getApiErrorMessage } from '../utils/httpError'
-const route = useRoute(); const router = useRouter(); const user = useUserStore(); const excel = useExcelStore()
+const route = useRoute(); const router = useRouter(); const user = useUserStore(); const excel = useExcelStore(); const workspace = useWorkspaceStore()
 const selectedProject = computed(() => getIntegrationProject(excel.selectedIntegration))
-const canOpenConfig = computed(() => selectedProject.value?.configRoute === '/config')
+const canOpenConfig = computed(() => workspace.isSelected)
+const canOpenAdmin = computed(() => user.userInfo.role === 'super_admin')
+const syncEngineProject = () => { excel.setIntegration(workspace.selectedProject?.engineCode || workspace.selectedProject?.code || '') }
+onMounted(async () => { try { await workspace.reload(); if (workspace.currentUser.role) user.setUser(user.token, { ...user.userInfo, ...workspace.currentUser }); syncEngineProject() } catch (error) { ElMessage.error(workspace.error || error.message || '工作区数据加载失败') } })
+watch(() => workspace.selectedProjectId, syncEngineProject)
 const passwordDialogVisible = ref(false)
 const passwordSaving = ref(false)
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
@@ -18,7 +23,6 @@ const openPasswordDialog = () => {
   passwordDialogVisible.value = true
 }
 const savePassword = async () => {
-  if (passwordForm.newPassword.length < 8) return ElMessage.warning('新密码长度不能少于 8 位')
   if (passwordForm.newPassword !== passwordForm.confirmPassword) return ElMessage.warning('两次输入的密码不一致')
   passwordSaving.value = true
   try {
@@ -40,11 +44,12 @@ const logout = async () => {
     <el-header class="topbar">
       <div class="logo"><span>EF</span> ExcelForge</div>
       <el-menu class="main-nav" mode="horizontal" router :default-active="route.path" :ellipsis="false">
-        <el-menu-item index="/workspace">数据处理</el-menu-item>
-        <el-menu-item v-if="canOpenConfig" index="/config">基础配置</el-menu-item>
+        <el-menu-item v-if="workspace.isSelected" index="/workspace">联调表单处理</el-menu-item>
+        <el-menu-item v-if="canOpenConfig" index="/config">联调表单配置</el-menu-item>
+        <el-menu-item v-if="canOpenAdmin" index="/admin">系统管理</el-menu-item>
       </el-menu>
       <div class="user-area">
-        <span>{{ user.userInfo.name || user.userInfo.username || '当前用户' }}</span>
+        <span>{{ user.userInfo.displayName || user.userInfo.name || user.userInfo.username || '当前用户' }}</span>
         <el-button text @click="openPasswordDialog">修改密码</el-button>
         <el-button text @click="logout">退出登录</el-button>
       </div>

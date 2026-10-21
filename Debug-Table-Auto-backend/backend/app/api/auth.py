@@ -19,9 +19,12 @@ class UserInfo(TypedDict):
     name: str
 
 
-class LoginData(TypedDict):
+class LoginData(TypedDict, total=False):
     token: str
     userInfo: UserInfo
+    role: str
+    lineId: int | None
+    professionId: int | None
 
 
 class LoginResponse(TypedDict):
@@ -36,9 +39,14 @@ def _user_info(user: AuthUser) -> UserInfo:
     return {"username": user["username"], "name": user["displayName"]}
 
 
-def _validate_password(password: str, path: list[str]) -> None:
-    if len(password) < 8:
-        raise BusinessError("密码长度不能少于 8 位", "AUTH_PASSWORD_TOO_SHORT", path=path)
+def _login_data(repository: AuthRepository, user: AuthUser, remember: bool) -> LoginData:
+    return {
+        "token": repository.create_session(user["id"], remember=remember),
+        "userInfo": _user_info(user),
+        "role": str(user.get("role", "super_admin")),
+        "lineId": user.get("lineId"),
+        "professionId": user.get("professionId"),
+    }
 
 
 def _migrate_configured_credential(request: Request, repository: AuthRepository) -> None:
@@ -69,14 +77,16 @@ def register(payload: RegisterRequest, request: Request) -> LoginResponse:
     _migrate_configured_credential(request, repository)
     if not payload.agree:
         raise BusinessError("请先同意隐私条款和服务条款", "AUTH_AGREEMENT_REQUIRED", path=["agree"])
-    _validate_password(payload.password, ["password"])
     if not hmac.compare_digest(payload.password, payload.confirm_password):
-        raise BusinessError("两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"])
+        raise BusinessError(
+            "两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"]
+        )
     if repository.count_users():
-        raise BusinessError("系统已完成初始化，请联系管理员创建账号", "AUTH_REGISTRATION_CLOSED", status_code=409)
+        raise BusinessError(
+            "系统已完成初始化，请联系管理员创建账号", "AUTH_REGISTRATION_CLOSED", status_code=409
+        )
     user = repository.create_user(payload.username, payload.password, payload.display_name)
-    token = repository.create_session(user["id"], remember=False)
-    return {"data": {"token": token, "userInfo": _user_info(user)}}
+    return {"data": _login_data(repository, user, remember=False)}
 
 
 @router.post("/login")
@@ -88,24 +98,33 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
     user = repository.authenticate(payload.username, payload.password)
     if user is None:
         raise BusinessError("用户名或密码错误", "AUTH_INVALID_CREDENTIALS", status_code=401)
-    token = repository.create_session(user["id"], remember=payload.remember)
-    return {"data": {"token": token, "userInfo": _user_info(user)}}
+    return {"data": _login_data(repository, user, remember=payload.remember)}
 
 
 @router.post("/change-password")
 def change_password(payload: ChangePasswordRequest, request: Request) -> dict[str, str]:
     current = _current_user(request, request.headers.get("Authorization"))
-    _validate_password(payload.new_password, ["newPassword"])
     if not hmac.compare_digest(payload.new_password, payload.confirm_password):
-        raise BusinessError("两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"])
-    _repository(request).change_password(current["id"], payload.current_password, payload.new_password)
+        raise BusinessError(
+            "两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"]
+        )
+    _repository(request).change_password(
+        current["id"], payload.current_password, payload.new_password
+    )
     return {"message": "密码修改成功"}
 
 
 @router.get("/me")
 def me(request: Request) -> dict[str, UserInfo]:
     user = _current_user(request, request.headers.get("Authorization"))
-    return {"data": _user_info(user)}
+    return {
+        "data": {
+            **_user_info(user),
+            "role": user.get("role", "super_admin"),
+            "lineId": user.get("lineId"),
+            "professionId": user.get("professionId"),
+        }
+    }
 
 
 @router.post("/logout")

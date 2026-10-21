@@ -12,7 +12,7 @@ const safeDecodeURIComponent = (value) => {
 
 const sanitizeFilename = (value) => {
   const basename = value.split(/[\\/]/).pop().replace(/[\u0000-\u001f<>:"|?*]/g, '').trim()
-  return basename.toLowerCase().endsWith('.xls') ? basename : DEFAULT_FILENAME
+  return /\.(xls|xlsx|csv)$/i.test(basename) ? basename : DEFAULT_FILENAME
 }
 
 export const getDownloadFilename = (headers) => {

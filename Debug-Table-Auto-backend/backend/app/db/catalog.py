@@ -28,7 +28,7 @@ from app.schemas.catalog import (
     TestContentWriteRequest,
 )
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 _BUILTIN_PARENT_STATUSES: dict[str, list[str]] = {
     "排烟机": ["运行状态", "手自动切换状态", "开启控制命令"],
@@ -997,6 +997,69 @@ class CatalogRepository:
                             )
                 connection.execute("INSERT INTO schema_migrations(version) VALUES (9)")
                 current_version = 9
+            if current_version < 10:
+                station_columns = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(stations)").fetchall()
+                }
+                if "line_id" not in station_columns:
+                    line_table_exists = connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace_lines'"
+                    ).fetchone()
+                    line_row = (
+                        connection.execute(
+                            "SELECT id FROM workspace_lines WHERE code = '9' COLLATE NOCASE LIMIT 1"
+                        ).fetchone()
+                        if line_table_exists
+                        else None
+                    )
+                    default_line_id = int(line_row[0]) if line_row else 1
+                    connection.execute("ALTER TABLE stations RENAME TO stations_before_line_scope")
+                    connection.execute(
+                        "DROP INDEX IF EXISTS ix_stations_sort_order"
+                    )
+                    connection.execute(
+                        "DROP INDEX IF EXISTS ix_stations_integration_code"
+                    )
+                    connection.execute(
+                        """
+                        CREATE TABLE stations (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            line_id INTEGER NOT NULL,
+                            code TEXT NOT NULL COLLATE NOCASE,
+                            name TEXT NOT NULL COLLATE NOCASE,
+                            description TEXT NOT NULL DEFAULT '',
+                            sort_order INTEGER NOT NULL DEFAULT 0,
+                            is_enabled INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0, 1)),
+                            integration_code TEXT NOT NULL DEFAULT 'T19',
+                            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                            UNIQUE(line_id, code),
+                            UNIQUE(line_id, name)
+                        )
+                        """
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO stations(
+                            id, line_id, code, name, description, sort_order, is_enabled,
+                            integration_code, created_at, updated_at
+                        )
+                        SELECT id, ?, code, name, description, sort_order, is_enabled,
+                               integration_code, created_at, updated_at
+                        FROM stations_before_line_scope
+                        """,
+                        (default_line_id,),
+                    )
+                    connection.execute("DROP TABLE stations_before_line_scope")
+                    connection.execute(
+                        "CREATE INDEX ix_stations_sort_order ON stations(line_id, sort_order, id)"
+                    )
+                    connection.execute(
+                        "CREATE INDEX ix_stations_integration_code ON stations(integration_code, line_id)"
+                    )
+                connection.execute("INSERT INTO schema_migrations(version) VALUES (10)")
+                current_version = 10
             selector_columns = {
                 row[1]
                 for row in connection.execute(
@@ -1268,9 +1331,11 @@ class CatalogRepository:
             for row in rows
         ]
 
-    def list_stations(self, *, include_disabled: bool = False) -> list[StationListItem]:
+    def list_stations(
+        self, line_id: int, *, include_disabled: bool = False
+    ) -> list[StationListItem]:
         self.ensure_schema()
-        where_clause = "" if include_disabled else "WHERE is_enabled = 1"
+        where_clause = "WHERE line_id = ?" + ("" if include_disabled else " AND is_enabled = 1")
         with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 f"""
@@ -1278,7 +1343,8 @@ class CatalogRepository:
                 FROM stations
                 {where_clause}
                 ORDER BY sort_order, id
-                """
+                """,
+                (line_id,),
             ).fetchall()
         return [
             {
@@ -1292,20 +1358,20 @@ class CatalogRepository:
             for row in rows
         ]
 
-    def create_station(self, payload: StationWriteRequest) -> StationListItem:
-        return self._save_station(None, payload)
+    def create_station(self, line_id: int, payload: StationWriteRequest) -> StationListItem:
+        return self._save_station(None, line_id, payload)
 
     def update_station(
-        self, station_id: int, payload: StationWriteRequest
+        self, station_id: int, line_id: int, payload: StationWriteRequest
     ) -> StationListItem:
-        return self._save_station(station_id, payload)
+        return self._save_station(station_id, line_id, payload)
 
-    def delete_station(self, station_id: int) -> None:
+    def delete_station(self, station_id: int, line_id: int) -> None:
         self.ensure_schema()
         with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT id FROM stations WHERE id = ?", (station_id,)
+                "SELECT id FROM stations WHERE id = ? AND line_id = ?", (station_id, line_id)
             ).fetchone()
             if row is None:
                 raise BusinessError(
@@ -1969,7 +2035,7 @@ class CatalogRepository:
         return self._get_discipline_or_raise(target_id)
 
     def _save_station(
-        self, station_id: int | None, payload: StationWriteRequest
+        self, station_id: int | None, line_id: int, payload: StationWriteRequest
     ) -> StationListItem:
         self.ensure_schema()
         try:
@@ -1977,7 +2043,8 @@ class CatalogRepository:
                 connection.execute("BEGIN IMMEDIATE")
                 if station_id is not None:
                     row = connection.execute(
-                        "SELECT id, code FROM stations WHERE id = ?", (station_id,)
+                        "SELECT id, code FROM stations WHERE id = ? AND line_id = ?",
+                        (station_id, line_id),
                     ).fetchone()
                     if row is None:
                         raise BusinessError(
@@ -1991,7 +2058,7 @@ class CatalogRepository:
                         UPDATE stations
                         SET code = ?, name = ?, description = ?, sort_order = ?,
                             is_enabled = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                        WHERE id = ?
+                        WHERE id = ? AND line_id = ?
                         """,
                         (
                             payload.code or str(row["code"]),
@@ -2000,6 +2067,7 @@ class CatalogRepository:
                             payload.sort_order,
                             1 if payload.is_enabled else 0,
                             station_id,
+                            line_id,
                         ),
                     )
                     target_id = station_id
@@ -2011,8 +2079,8 @@ class CatalogRepository:
                         """
                         INSERT INTO stations(
                             code, name, description, sort_order, is_enabled,
-                            integration_code
-                        ) VALUES (?, ?, ?, ?, ?, ?)
+                            integration_code, line_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             station_code,
@@ -2021,6 +2089,7 @@ class CatalogRepository:
                             payload.sort_order,
                             1 if payload.is_enabled else 0,
                             self.integration_code,
+                            line_id,
                         ),
                     )
                     target_id = int(cursor.lastrowid)
