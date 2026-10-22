@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated
 import re
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
@@ -24,6 +24,7 @@ from app.schemas.catalog import (
     TestContentListResponse,
     TestContentWriteRequest,
 )
+
 
 def _require_catalog_access(request: Request) -> None:
     authorization = request.headers.get("Authorization", "")
@@ -51,9 +52,7 @@ def _require_catalog_access(request: Request) -> None:
     if role == "super_admin":
         return
     with repository.database._connect() as connection:
-        line = connection.execute(
-            "SELECT id FROM workspace_lines WHERE code = '9' COLLATE NOCASE"
-        ).fetchone()
+        line = connection.execute("SELECT id FROM workspace_lines WHERE code = '9' COLLATE NOCASE").fetchone()
         profession = connection.execute(
             "SELECT id FROM workspace_professions WHERE code = 'ZDH' COLLATE NOCASE"
         ).fetchone()
@@ -81,9 +80,7 @@ router = APIRouter(prefix="/api/catalog", tags=["catalog"], dependencies=[Depend
 def _repository(request: Request) -> CatalogRepository:
     integration_code = request.query_params.get("integrationCode", "T19").strip().upper()
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,31}", integration_code):
-        raise BusinessError(
-            "联调项目代码格式无效", "INVALID_INTEGRATION_CODE", status_code=422
-        )
+        raise BusinessError("联调项目代码格式无效", "INVALID_INTEGRATION_CODE", status_code=422)
     return request.app.state.catalog_repository_for(integration_code)
 
 
@@ -102,9 +99,7 @@ def list_equipment_hierarchy(
     include_disabled: Annotated[bool, Query(alias="includeDisabled")] = False,
 ) -> EquipmentHierarchyResponse:
     """Return parent equipment types and configured child subtypes for tree UIs."""
-    data = _repository(request).list_equipment_hierarchy(
-        include_disabled=include_disabled
-    )
+    data = _repository(request).list_equipment_hierarchy(include_disabled=include_disabled)
     return {"data": data, "meta": {"count": len(data)}}
 
 
@@ -114,9 +109,7 @@ def list_equipment_subtypes(
     request: Request,
     include_disabled: Annotated[bool, Query(alias="includeDisabled")] = False,
 ) -> EquipmentSubtypeListResponse:
-    data = _repository(request).list_equipment_subtypes(
-        equipment_type_id, include_disabled=include_disabled
-    )
+    data = _repository(request).list_equipment_subtypes(equipment_type_id, include_disabled=include_disabled)
     return {"data": data, "meta": {"count": len(data)}}
 
 
@@ -216,9 +209,7 @@ def get_test_content(content_id: int, request: Request) -> TestContentDetailResp
 
 
 @router.post("/equipment-types")
-def create_equipment_type(
-    payload: EquipmentTypeWriteRequest, request: Request
-) -> dict[str, object]:
+def create_equipment_type(payload: EquipmentTypeWriteRequest, request: Request) -> dict[str, object]:
     item = _repository(request).create_equipment_type(payload)
     return {"data": item}
 
@@ -244,9 +235,7 @@ def create_discipline(payload: DisciplineWriteRequest, request: Request) -> dict
 
 
 @router.put("/disciplines/{discipline_id}")
-def update_discipline(
-    discipline_id: int, payload: DisciplineWriteRequest, request: Request
-) -> dict[str, object]:
+def update_discipline(discipline_id: int, payload: DisciplineWriteRequest, request: Request) -> dict[str, object]:
     item = _repository(request).update_discipline(discipline_id, payload)
     return {"data": item}
 
@@ -258,17 +247,13 @@ def delete_discipline(discipline_id: int, request: Request) -> Response:
 
 
 @router.post("/test-contents")
-def create_test_content(
-    payload: TestContentWriteRequest, request: Request
-) -> dict[str, object]:
+def create_test_content(payload: TestContentWriteRequest, request: Request) -> dict[str, object]:
     item = _repository(request).create_test_content(payload)
     return {"data": item}
 
 
 @router.put("/test-contents/{content_id}")
-def update_test_content(
-    content_id: int, payload: TestContentWriteRequest, request: Request
-) -> dict[str, object]:
+def update_test_content(content_id: int, payload: TestContentWriteRequest, request: Request) -> dict[str, object]:
     item = _repository(request).update_test_content(content_id, payload)
     return {"data": item}
 

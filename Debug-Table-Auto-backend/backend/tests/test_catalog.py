@@ -14,7 +14,13 @@ def _client(database_path: Path) -> TestClient:
     client = TestClient(create_app(Settings(mode="formal", database_path=database_path)))
     response = client.post(
         "/api/auth/register",
-        json={"username": "admin", "password": "secret123", "confirmPassword": "secret123", "displayName": "管理员", "agree": True},
+        json={
+            "username": "admin",
+            "password": "secret123",
+            "confirmPassword": "secret123",
+            "displayName": "管理员",
+            "agree": True,
+        },
     )
     if response.status_code == 200:
         client.headers.update({"Authorization": f"Bearer {response.json()['data']['token']}"})
@@ -78,16 +84,11 @@ def test_catalog_first_request_creates_empty_versioned_schema(tmp_path: Path) ->
     assert database_path.is_file()
     with sqlite3.connect(database_path) as connection:
         table_names = {
-            row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            ).fetchall()
+            row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         }
         version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
         columns = {
-            table: {
-                row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
-            }
+            table: {row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
             for table in (
                 "equipment_types",
                 "test_contents",
@@ -272,28 +273,23 @@ def test_catalog_migrates_t19_door_release_names_to_door_access(tmp_path: Path) 
                 ("DOOR", "门禁释放"),
             ],
         )
-        parent_ids = dict(connection.execute(
-            "SELECT name, id FROM equipment_types WHERE name IN ('监视模块', '控制模块')"
-        ).fetchall())
+        parent_ids = dict(
+            connection.execute("SELECT name, id FROM equipment_types WHERE name IN ('监视模块', '控制模块')").fetchall()
+        )
         connection.executemany(
-            "INSERT INTO equipment_type_subtypes(parent_equipment_type_id, code, name) "
-            "VALUES (?, ?, '门禁释放')",
+            "INSERT INTO equipment_type_subtypes(parent_equipment_type_id, code, name) VALUES (?, ?, '门禁释放')",
             [
                 (parent_ids["监视模块"], "MONITOR_DOOR"),
                 (parent_ids["控制模块"], "CONTROL_DOOR"),
             ],
         )
-        door_type_id = connection.execute(
-            "SELECT id FROM equipment_types WHERE code = 'DOOR'"
-        ).fetchone()[0]
+        door_type_id = connection.execute("SELECT id FROM equipment_types WHERE code = 'DOOR'").fetchone()[0]
         connection.execute(
             "INSERT INTO test_contents(code, equipment_type_id, content, equipment_subtype, integration_code) "
             "VALUES ('DOOR_RULE', ?, '门禁规则', '门禁释放', 'T19')",
             (door_type_id,),
         )
-        test_content_id = connection.execute(
-            "SELECT id FROM test_contents WHERE code = 'DOOR_RULE'"
-        ).fetchone()[0]
+        test_content_id = connection.execute("SELECT id FROM test_contents WHERE code = 'DOOR_RULE'").fetchone()[0]
         connection.execute(
             "INSERT INTO test_content_selectors(test_content_id, equipment_type, equipment_subtype) "
             "VALUES (?, '监视模块', '门禁释放')",
@@ -302,9 +298,7 @@ def test_catalog_migrates_t19_door_release_names_to_door_access(tmp_path: Path) 
 
     repository.ensure_schema()
     with sqlite3.connect(database_path) as connection:
-        renamed_type = connection.execute(
-            "SELECT name FROM equipment_types WHERE code = 'DOOR'"
-        ).fetchone()[0]
+        renamed_type = connection.execute("SELECT name FROM equipment_types WHERE code = 'DOOR'").fetchone()[0]
         renamed_children = connection.execute(
             "SELECT COUNT(*) FROM equipment_type_subtypes WHERE name = '门禁'"
         ).fetchone()[0]
@@ -312,8 +306,7 @@ def test_catalog_migrates_t19_door_release_names_to_door_access(tmp_path: Path) 
             "SELECT equipment_subtype FROM test_contents WHERE code = 'DOOR_RULE'"
         ).fetchone()[0]
         renamed_selector = connection.execute(
-            "SELECT equipment_type, equipment_subtype FROM test_content_selectors "
-            "WHERE test_content_id = ?",
+            "SELECT equipment_type, equipment_subtype FROM test_content_selectors WHERE test_content_id = ?",
             (test_content_id,),
         ).fetchone()
 
@@ -350,12 +343,8 @@ def test_catalog_filters_by_equipment_code_or_name(tmp_path: Path) -> None:
     with _client(database_path) as client:
         client.get("/api/catalog/test-contents")
         _seed_catalog(database_path)
-        by_code = client.get(
-            "/api/catalog/test-contents", params={"equipmentType": "smoke"}
-        )
-        disabled_by_name = client.get(
-            "/api/catalog/test-contents", params={"equipmentType": "温感"}
-        )
+        by_code = client.get("/api/catalog/test-contents", params={"equipmentType": "smoke"})
+        disabled_by_name = client.get("/api/catalog/test-contents", params={"equipmentType": "温感"})
         all_by_name = client.get(
             "/api/catalog/test-contents",
             params={"equipmentType": "温感", "includeDisabled": "true"},
@@ -371,9 +360,7 @@ def test_catalog_can_include_disabled_records_explicitly(tmp_path: Path) -> None
     with _client(database_path) as client:
         client.get("/api/catalog/test-contents")
         _seed_catalog(database_path)
-        types_response = client.get(
-            "/api/catalog/equipment-types", params={"includeDisabled": "true"}
-        )
+        types_response = client.get("/api/catalog/equipment-types", params={"includeDisabled": "true"})
         contents_response = client.get(
             "/api/catalog/test-contents",
             params={"equipmentType": "SMOKE", "includeDisabled": "true"},
@@ -394,10 +381,11 @@ def test_catalog_can_include_disabled_records_explicitly(tmp_path: Path) -> None
         "停用结果",
     ]
     assert enabled_step["results"][1]["isEnabled"] is False
-    assert [
-        discipline["code"]
-        for discipline in enabled_step["results"][0]["responsibleDisciplines"]
-    ] == ["ISCS", "FAS", "DISABLED"]
+    assert [discipline["code"] for discipline in enabled_step["results"][0]["responsibleDisciplines"]] == [
+        "ISCS",
+        "FAS",
+        "DISABLED",
+    ]
 
 
 def test_equipment_hierarchy_returns_parent_and_subtypes(tmp_path: Path) -> None:
@@ -434,9 +422,7 @@ def test_renaming_equipment_subtype_updates_existing_rule_references(
     with _client(database_path) as client:
         client.get("/api/catalog/test-contents")
         with sqlite3.connect(database_path) as connection:
-            connection.execute(
-                "INSERT INTO equipment_types(id, code, name) VALUES (10, 'GAS', '特殊模块')"
-            )
+            connection.execute("INSERT INTO equipment_types(id, code, name) VALUES (10, 'GAS', '特殊模块')")
             connection.execute(
                 """
                 INSERT INTO equipment_type_subtypes(
@@ -451,9 +437,7 @@ def test_renaming_equipment_subtype_updates_existing_rule_references(
                 ) VALUES ('GAS_RULE', 10, '气灭测试步骤', '气灭测试')
                 """
             )
-            rule_id = connection.execute(
-                "SELECT id FROM test_contents WHERE code = 'GAS_RULE'"
-            ).fetchone()[0]
+            rule_id = connection.execute("SELECT id FROM test_contents WHERE code = 'GAS_RULE'").fetchone()[0]
             connection.execute(
                 """
                 INSERT INTO test_content_selectors(
@@ -526,12 +510,8 @@ def test_catalog_data_isolated_by_integration_database(tmp_path: Path) -> None:
             },
         )
         assert created.status_code == 200
-        t20 = client.get(
-            "/api/catalog/equipment-types", params={"integrationCode": "T20"}
-        )
-        t19 = client.get(
-            "/api/catalog/equipment-types", params={"integrationCode": "T19"}
-        )
+        t20 = client.get("/api/catalog/equipment-types", params={"integrationCode": "T20"})
+        t19 = client.get("/api/catalog/equipment-types", params={"integrationCode": "T19"})
 
     assert any(item["code"] == "ONLY_T20" for item in t20.json()["data"])
     assert all(item["code"] != "ONLY_T20" for item in t19.json()["data"])
@@ -542,19 +522,13 @@ def test_legacy_catalog_is_limited_to_nine_line_automation_accounts(tmp_path: Pa
     database_path = tmp_path / "catalog.sqlite3"
     with _client(database_path) as client:
         with sqlite3.connect(database_path) as connection:
-            line_id = connection.execute(
-                "SELECT id FROM workspace_lines WHERE code = '9' COLLATE NOCASE"
-            ).fetchone()[0]
+            line_id = connection.execute("SELECT id FROM workspace_lines WHERE code = '9' COLLATE NOCASE").fetchone()[0]
             profession_id = connection.execute(
                 "SELECT id FROM workspace_professions WHERE code = 'ZDH' COLLATE NOCASE"
             ).fetchone()[0]
-            connection.execute(
-                "INSERT INTO workspace_lines(code, name) VALUES ('10', '10号线')"
-            )
+            connection.execute("INSERT INTO workspace_lines(code, name) VALUES ('10', '10号线')")
             other_line_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
-            connection.execute(
-                "INSERT INTO workspace_professions(code, name) VALUES ('TX', '通信')"
-            )
+            connection.execute("INSERT INTO workspace_professions(code, name) VALUES ('TX', '通信')")
             other_profession_id = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
             connection.execute(
                 "UPDATE auth_users SET role = 'line_admin', line_id = ? WHERE username = 'admin'",
@@ -563,14 +537,20 @@ def test_legacy_catalog_is_limited_to_nine_line_automation_accounts(tmp_path: Pa
 
         permitted_scope = {"lineId": line_id, "professionId": profession_id}
         assert client.get("/api/catalog/equipment-types", params=permitted_scope).status_code == 200
-        assert client.get(
-            "/api/catalog/equipment-types",
-            params={"lineId": other_line_id, "professionId": profession_id},
-        ).status_code == 403
-        assert client.get(
-            "/api/catalog/equipment-types",
-            params={"lineId": line_id, "professionId": other_profession_id},
-        ).status_code == 403
+        assert (
+            client.get(
+                "/api/catalog/equipment-types",
+                params={"lineId": other_line_id, "professionId": profession_id},
+            ).status_code
+            == 403
+        )
+        assert (
+            client.get(
+                "/api/catalog/equipment-types",
+                params={"lineId": line_id, "professionId": other_profession_id},
+            ).status_code
+            == 403
+        )
 
         with sqlite3.connect(database_path) as connection:
             connection.execute(
@@ -579,10 +559,10 @@ def test_legacy_catalog_is_limited_to_nine_line_automation_accounts(tmp_path: Pa
             )
             connection.commit()
         assert client.get("/api/catalog/equipment-types", params=permitted_scope).status_code == 200
-        assert client.get(
-            "/api/catalog/equipment-types",
-            params={"lineId": other_line_id, "professionId": profession_id},
-        ).status_code == 403
-
-
-
+        assert (
+            client.get(
+                "/api/catalog/equipment-types",
+                params={"lineId": other_line_id, "professionId": profession_id},
+            ).status_code
+            == 403
+        )

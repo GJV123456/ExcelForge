@@ -7,6 +7,7 @@ export const updateWorkspaceConfig = (id, data) => request.put(`/api/workspace/c
 export const copyWorkspaceConfig = (data) => request.post('/api/workspace/configs/copy', data)
 export const batchCopyWorkspaceConfigs = (data) => request.post('/api/workspace/configs/batch-copy', data)
 export const importWorkspaceConfigs = (data) => request.post('/api/workspace/configs/import', data)
+export const previewWorkspaceConfigImport = (data) => request.post('/api/workspace/configs/import/preview', data)
 export const setWorkspaceConfigStatus = (id, enabled) => request.post(`/api/workspace/configs/${id}/status`, null, { params: { enabled } })
 export const downloadWorkspaceTemplate = () => request.get('/api/workspace/template', { responseType: 'blob' })
 export const downloadWorkspaceConfigTemplate = (params) => request.get('/api/workspace/config-template', { params, responseType: 'blob' })
@@ -24,3 +25,10 @@ export const createWorkspaceProfession = (data) => request.post('/api/workspace/
 export const updateWorkspaceProfession = (id, data) => request.put(`/api/workspace/professions/${id}`, data)
 export const createWorkspaceProject = (data) => request.post('/api/workspace/projects', data)
 export const updateWorkspaceProject = (id, data) => request.put(`/api/workspace/projects/${id}`, data)
+export const getWorkspaceDebugItems = (params) => request.get('/api/workspace/debug-items', { params })
+export const saveWorkspaceDebugItem = (id, data) => id
+  ? request.put(`/api/workspace/debug-items/${id}`, data)
+  : request.post('/api/workspace/debug-items', data)
+export const createWorkspaceDebugItemsBatch = (data) => request.post('/api/workspace/debug-items/batch', data)
+export const deleteWorkspaceDebugItem = (id, params) => request.delete(`/api/workspace/debug-items/${id}`, { params })
+export const setWorkspaceDebugItemStatus = (id, enabled, params) => request.post(`/api/workspace/debug-items/${id}/status`, null, { params: { ...params, enabled } })

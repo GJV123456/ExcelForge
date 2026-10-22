@@ -18,4 +18,3 @@ class HealthResponse(TypedDict):
 @router.get("/health")
 def health(request: Request) -> HealthResponse:
     return {"status": "ok", "mode": request.app.state.settings.mode}
-

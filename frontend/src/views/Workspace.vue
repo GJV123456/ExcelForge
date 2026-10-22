@@ -12,12 +12,12 @@ import { useWorkspaceStore } from '../store/workspace'
 import { buildContent, extractEquipmentCode } from '../utils/excelParser'
 import { deriveEquipmentClassification, inferElectricDamperStatus } from '../utils/equipmentSubtype'
 import { downloadGeneration, getGeneration, getGenerations, processExcel } from '../api/excel'
+import { downloadWorkspaceTemplate } from '../api/workspace'
 import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
 import { buildTestLocation, validateFormalLocation } from '../utils/formalLocation'
 import { integrationProjects } from '../data/integrations'
 import { getWorkspaceConfigs } from '../api/workspace'
-import WorkspaceScopePicker from '../components/WorkspaceScopePicker.vue'
 
 const excel = useExcelStore()
 const workspace = useWorkspaceStore()
@@ -184,6 +184,15 @@ const downloadHistory = async (item) => {
   }
 }
 
+const downloadInputTemplate = async () => {
+  try {
+    downloadResponseBlob(await downloadWorkspaceTemplate())
+    ElMessage.success('测试数据导入模板已下载')
+  } catch (error) {
+    ElMessage.error(await getApiErrorMessage(error))
+  }
+}
+
 const viewHistory = async (item) => {
   historyDetailVisible.value = true
   historyDetailLoading.value = true
@@ -235,16 +244,15 @@ watch(selectedIntegration, (value) => {
 
 <template>
   <div class="workspace">
-    <div class="page-title workspace-title">
-      <div><h1>测试内容生成工作台</h1><p>上传 Excel，配置规则，生成系统可导入的正式文件。</p></div>
-      <WorkspaceScopePicker compact />
+    <div class="workspace-title-block">
+      <div class="page-title workspace-title"><div><h1>测试内容生成工作台</h1><p>上传 Excel，配置规则，生成系统可导入的正式文件。</p></div></div>
     </div>
     <el-collapse-transition>
       <div v-if="isIntegrationSelected" class="integration-content">
         <div class="integration-banner"><strong>{{ selectedProject?.name }}</strong><span>当前联调项目</span></div>
         <template v-if="isT19Selected">
         <el-card class="section-card"><template #header><b>1. 测试地点配置</b></template><LocationForm v-model="locationValue" /></el-card>
-        <el-card class="section-card"><template #header><b>2. Excel 上传与解析</b></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /><div v-if="excel.excelType && excel.headers.includes('联调配置编码')" class="match-stats"><span>源数据共：<b>{{ matchStats.total }}</b> 条</span><span class="stat-success">已匹配：<b>{{ matchStats.matched }}</b> 条</span><span class="stat-warning">未匹配：<b>{{ matchStats.unmatched }}</b> 条</span><span class="stat-muted">配置已停用：<b>{{ matchStats.disabled }}</b> 条</span></div></el-card>
+        <el-card class="section-card"><template #header><div class="upload-card-header"><b>2. Excel 上传与解析</b><el-button :icon="Download" @click="downloadInputTemplate">下载测试数据模板</el-button></div></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /><div v-if="excel.excelType && excel.headers.includes('联调配置编码')" class="match-stats"><span>源数据共：<b>{{ matchStats.total }}</b> 条</span><span class="stat-success">已匹配：<b>{{ matchStats.matched }}</b> 条</span><span class="stat-warning">未匹配：<b>{{ matchStats.unmatched }}</b> 条</span><span class="stat-muted">配置已停用：<b>{{ matchStats.disabled }}</b> 条</span></div></el-card>
         <el-card v-if="excel.excelType === 'B'" class="section-card"><template #header><b>3. 测试内容生成规则</b></template><RuleBuilder v-model="excel.rules" :available-fields="excel.headers" /></el-card>
         <el-card v-if="excel.excelType" class="section-card"><template #header><b>{{ excel.excelType === 'B' ? '实时预览（前 5 条）' : 'Excel 数据预览（前 5 条）' }}</b></template><ExcelPreview :rows="excel.rows" :excel-type="excel.excelType" :preview="preview" /></el-card>
         <div v-if="excel.excelType" class="submit-panel"><el-button class="submit-button" type="primary" size="large" :icon="DocumentAdd" :loading="loading" :disabled="loading" @click="submit">{{ submitLabel }}</el-button></div>
@@ -292,8 +300,11 @@ watch(selectedIntegration, (value) => {
 </template>
 
 <style scoped>
+.workspace-title-block { display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:16px; }
 .workspace-title { gap: 18px; }
+.upload-card-header { display:flex;align-items:center;justify-content:space-between;gap:12px; }
 @media (max-width: 760px) { .workspace-title { align-items: flex-start; flex-direction: column; gap: 10px; } }
+@media (max-width: 520px) { .upload-card-header { align-items:flex-start;flex-direction:column; } }
 .match-stats { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; color: #62728a; font-size: 13px; }
 .match-stats span { padding: 7px 11px; border: 1px solid #e4eaf3; border-radius: 7px; background: #f8fbff; }
 .match-stats b { color: #2f486e; }

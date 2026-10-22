@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from app.db.maintenance import backup_database, check_database, initialize_database
 from app.db.catalog import SCHEMA_VERSION
+from app.db.maintenance import backup_database, check_database, initialize_database
 
 
 def test_database_init_check_and_consistent_backup(tmp_path: Path) -> None:
@@ -44,4 +44,3 @@ def test_database_backup_refuses_overwrite_or_source_target(tmp_path: Path) -> N
         backup_database(database_path, database_path)
 
     assert existing.read_bytes() == b"do not overwrite"
-

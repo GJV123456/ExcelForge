@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
-from typing_extensions import NotRequired, TypedDict
+from datetime import UTC, datetime, timedelta
+from typing import NotRequired
+
+from typing_extensions import TypedDict
 
 from app.db.catalog import CatalogRepository
 from app.exceptions import BusinessError
@@ -71,9 +73,7 @@ class AuthRepository:
                 )
                 user_id = int(cursor.lastrowid)
         except sqlite3.IntegrityError as error:
-            raise BusinessError(
-                "用户名已存在", "AUTH_USERNAME_EXISTS", path=["username"], status_code=409
-            ) from error
+            raise BusinessError("用户名已存在", "AUTH_USERNAME_EXISTS", path=["username"], status_code=409) from error
         return {"id": user_id, "username": username, "displayName": display_name}
 
     def authenticate(self, username: str, password: str) -> AuthUser | None:
@@ -96,7 +96,7 @@ class AuthRepository:
     def create_session(self, user_id: int, remember: bool) -> str:
         self.ensure_schema()
         token, token_hash = create_session_token()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = now + timedelta(days=30 if remember else 1)
         with closing(self.database._connect()) as connection, connection:
             connection.execute(
@@ -122,7 +122,7 @@ class AuthRepository:
         if row is None:
             return None
         try:
-            expired = datetime.fromisoformat(str(row["expires_at"])) <= datetime.now(timezone.utc)
+            expired = datetime.fromisoformat(str(row["expires_at"])) <= datetime.now(UTC)
         except ValueError:
             expired = True
         return None if expired else self._user(row)
@@ -138,7 +138,8 @@ class AuthRepository:
             raise BusinessError("当前密码错误", "AUTH_CURRENT_PASSWORD_INVALID", status_code=400)
         with closing(self.database._connect()) as connection, connection:
             connection.execute(
-                "UPDATE auth_users SET password_hash = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+                "UPDATE auth_users SET password_hash = ?, "
+                "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
                 (hash_password(new_password), user_id),
             )
             connection.execute(
@@ -166,10 +167,9 @@ class AuthRepository:
             "username": str(row["username"]),
             "displayName": str(row["display_name"]),
         }
-        if "role" in row.keys():
+        row_keys = set(row.keys())
+        if "role" in row_keys:
             user["role"] = str(row["role"] or "professional_configurator")
             user["lineId"] = int(row["line_id"]) if row["line_id"] is not None else None
-            user["professionId"] = (
-                int(row["profession_id"]) if row["profession_id"] is not None else None
-            )
+            user["professionId"] = int(row["profession_id"]) if row["profession_id"] is not None else None
         return user

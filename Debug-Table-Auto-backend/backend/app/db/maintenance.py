@@ -21,11 +21,7 @@ class IntegrityReport:
 
     @property
     def is_healthy(self) -> bool:
-        return (
-            self.schema_version == SCHEMA_VERSION
-            and self.integrity == "ok"
-            and not self.foreign_key_errors
-        )
+        return self.schema_version == SCHEMA_VERSION and self.integrity == "ok" and not self.foreign_key_errors
 
 
 def initialize_database(database_path: Path) -> int:

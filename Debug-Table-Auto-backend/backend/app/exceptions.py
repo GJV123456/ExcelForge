@@ -67,9 +67,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def handle_validation_error(
-        request: Request, error: RequestValidationError
-    ) -> JSONResponse:
+    async def handle_validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
         first_error = error.errors()[0] if error.errors() else {}
         location = list(first_error.get("loc", ()))
         if location and location[0] == "body":

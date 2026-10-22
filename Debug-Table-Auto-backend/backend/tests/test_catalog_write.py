@@ -13,7 +13,13 @@ def _client(tmp_path: Path) -> TestClient:
     client = TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "catalog.sqlite3")))
     response = client.post(
         "/api/auth/register",
-        json={"username": "admin", "password": "secret123", "confirmPassword": "secret123", "displayName": "管理员", "agree": True},
+        json={
+            "username": "admin",
+            "password": "secret123",
+            "confirmPassword": "secret123",
+            "displayName": "管理员",
+            "agree": True,
+        },
     )
     if response.status_code == 200:
         client.headers.update({"Authorization": f"Bearer {response.json()['data']['token']}"})
@@ -58,7 +64,6 @@ def test_catalog_write_cycle(tmp_path: Path) -> None:
         assert fas.status_code == 200
         assert iscs.status_code == 200
         fas_id = fas.json()["data"]["id"]
-        iscs_id = iscs.json()["data"]["id"]
 
         content = client.post(
             "/api/catalog/test-contents",
@@ -295,9 +300,7 @@ def test_equipment_hierarchy_can_be_edited_and_deletes_are_protected(
                 ],
             },
         ).json()["data"]
-        protected = client.delete(
-            f"/api/catalog/equipment-subtypes/{subtype['id']}"
-        )
+        protected = client.delete(f"/api/catalog/equipment-subtypes/{subtype['id']}")
         assert protected.status_code == 409
         assert protected.json()["code"] == "CATALOG_EQUIPMENT_SUBTYPE_IN_USE"
         rename = client.put(
@@ -317,9 +320,7 @@ def test_equipment_hierarchy_can_be_edited_and_deletes_are_protected(
         )
         assert rename.status_code == 200
         assert rule["equipmentStatus"] == "保留状态"
-        refreshed_rule = client.get(
-            f"/api/catalog/test-contents/{rule['id']}"
-        ).json()["data"]
+        refreshed_rule = client.get(f"/api/catalog/test-contents/{rule['id']}").json()["data"]
         assert refreshed_rule["equipmentSubtype"] == "不能重命名"
 
 
@@ -372,7 +373,7 @@ def test_subtype_and_status_rules_are_independent(tmp_path: Path) -> None:
                             "isEnabled": True,
                             "results": [
                                 {
-                                "description": f"结果{status}",
+                                    "description": f"结果{status}",
                                     "sortOrder": 1,
                                     "isEnabled": True,
                                     "responsibleDisciplineIds": [discipline_id],
@@ -478,5 +479,3 @@ def test_subtype_statuses_can_be_updated_without_deleting_used_rules(tmp_path: P
             json={"statuses": ["FAS主机人工确定按钮", "fas主机人工确定按钮"]},
         )
         assert duplicate.status_code == 422
-
-

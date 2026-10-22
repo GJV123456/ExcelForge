@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints
-from typing_extensions import Annotated
 
 from app.schemas.common import ApiModel
 
-Text = Annotated[
-    str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=512)
-]
+Text = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=512)]
 
 Role = Literal["super_admin", "line_admin", "professional_configurator"]
 
@@ -20,6 +17,8 @@ class ScopeSelection(ApiModel):
     line_id: int = Field(alias="lineId", gt=0)
     profession_id: int = Field(alias="professionId", gt=0)
     project_id: int = Field(alias="projectId", gt=0)
+    debug_subitem_id: str | None = Field(default=None, alias="debugSubitemId", max_length=64)
+    debug_division_id: str | None = Field(default=None, alias="debugDivisionId", max_length=64)
 
 
 class LineWriteRequest(ApiModel):
@@ -37,6 +36,7 @@ class ProfessionWriteRequest(ApiModel):
 
 
 class ProjectWriteRequest(ApiModel):
+    line_id: int | None = Field(default=None, alias="lineId", gt=0)
     profession_id: int = Field(alias="professionId", gt=0)
     code: Text
     name: Text
@@ -48,9 +48,7 @@ class ProjectWriteRequest(ApiModel):
 
 class ConfigResultWriteRequest(ApiModel):
     description: Text
-    responsible_disciplines: list[Text] = Field(
-        default_factory=list, alias="responsibleDisciplines"
-    )
+    responsible_disciplines: list[Text] = Field(default_factory=list, alias="responsibleDisciplines")
 
 
 class ConfigStepWriteRequest(ApiModel):
@@ -68,6 +66,8 @@ class ConfigWriteRequest(ApiModel):
     description: str = ""
     steps: list[ConfigStepWriteRequest] = Field(default_factory=list)
     is_enabled: bool = Field(default=True, alias="isEnabled")
+    debug_subitem_id: str | None = Field(default=None, alias="debugSubitemId", max_length=64)
+    debug_division_id: str | None = Field(default=None, alias="debugDivisionId", max_length=64)
 
 
 class ConfigCopyRequest(ApiModel):
@@ -83,6 +83,27 @@ class BatchConfigCopyRequest(ApiModel):
 class ConfigImportRequest(ApiModel):
     scope: ScopeSelection
     rows: list[dict[str, object]] = Field(min_length=1, max_length=10000)
+    decisions: dict[str, Literal["overwrite", "skip"]] = Field(default_factory=dict)
+
+
+class DebugItemWriteRequest(ApiModel):
+    scope: ScopeSelection
+    category: Literal["debug_subitems", "debug_divisions"]
+    parent_id: str | None = Field(default=None, alias="parentId", max_length=64)
+    code: str = Field(default="", max_length=100)
+    name: Text
+    description: str = Field(default="", max_length=2000)
+    sort_order: int = Field(default=1, alias="sortOrder", gt=0)
+    is_enabled: bool = Field(default=True, alias="isEnabled")
+
+
+class DebugItemsBatchWriteRequest(ApiModel):
+    scope: ScopeSelection
+    category: Literal["debug_subitems", "debug_divisions"]
+    parent_id: str | None = Field(default=None, alias="parentId", max_length=64)
+    names: list[Text] = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=2000)
+    sort_order: int = Field(default=1, alias="sortOrder", gt=0)
 
 
 class WorkspaceCatalogWriteRequest(ApiModel):

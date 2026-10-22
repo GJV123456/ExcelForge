@@ -5,5 +5,9 @@ import 'element-plus/dist/index.css'
 import './styles.css'
 import App from './App.vue'
 import router from './router'
+import ExclusiveSelect from './components/ExclusiveSelect.vue'
 
-createApp(App).use(createPinia()).use(router).use(ElementPlus).mount('#app')
+const app = createApp(App)
+app.use(createPinia()).use(router).use(ElementPlus)
+app.component('el-select', ExclusiveSelect)
+app.mount('#app')

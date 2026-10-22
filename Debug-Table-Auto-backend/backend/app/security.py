@@ -15,9 +15,7 @@ TOKEN_BYTES = 32
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(SALT_BYTES)
-    digest = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
-    )
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
     encoder = base64.urlsafe_b64encode
     return "$".join(
         (

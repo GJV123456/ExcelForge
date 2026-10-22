@@ -9,9 +9,7 @@ from typing_extensions import TypedDict
 
 from app.schemas.common import ApiModel
 
-TrimmedText = Annotated[
-    str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)
-]
+TrimmedText = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)]
 FreeText = Annotated[str, StringConstraints(strict=True, strip_whitespace=True)]
 
 
@@ -204,9 +202,7 @@ class StationWriteRequest(ApiModel):
 class ResultOutputWriteRequest(ApiModel):
     description: TrimmedText
     sort_order: int = Field(alias="sortOrder", gt=0)
-    responsible_discipline_ids: list[int] = Field(
-        alias="responsibleDisciplineIds", min_length=1, max_length=1
-    )
+    responsible_discipline_ids: list[int] = Field(alias="responsibleDisciplineIds", min_length=1, max_length=1)
     is_enabled: bool = Field(alias="isEnabled", default=True)
 
     @field_validator("responsible_discipline_ids")
@@ -226,9 +222,7 @@ class OperationStepWriteRequest(ApiModel):
 
     @field_validator("results")
     @classmethod
-    def validate_unique_result_sort_order(
-        cls, value: list[ResultOutputWriteRequest]
-    ) -> list[ResultOutputWriteRequest]:
+    def validate_unique_result_sort_order(cls, value: list[ResultOutputWriteRequest]) -> list[ResultOutputWriteRequest]:
         sort_orders = [item.sort_order for item in value]
         if len(set(sort_orders)) != len(sort_orders):
             raise ValueError("results.sortOrder must not contain duplicates")
@@ -245,15 +239,11 @@ class TestContentWriteRequest(ApiModel):
     revision: int = Field(default=1, gt=0)
     sort_order: int = Field(alias="sortOrder", gt=0)
     is_enabled: bool = Field(alias="isEnabled", default=True)
-    operation_steps: list[OperationStepWriteRequest] = Field(
-        alias="operationSteps", min_length=1
-    )
+    operation_steps: list[OperationStepWriteRequest] = Field(alias="operationSteps", min_length=1)
 
     @field_validator("operation_steps")
     @classmethod
-    def validate_unique_step_sort_order(
-        cls, value: list[OperationStepWriteRequest]
-    ) -> list[OperationStepWriteRequest]:
+    def validate_unique_step_sort_order(cls, value: list[OperationStepWriteRequest]) -> list[OperationStepWriteRequest]:
         sort_orders = [item.sort_order for item in value]
         if len(set(sort_orders)) != len(sort_orders):
             raise ValueError("operationSteps.sortOrder must not contain duplicates")

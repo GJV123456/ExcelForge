@@ -28,9 +28,7 @@ ALLOWED_DIRECTIONS = frozenset({"上行", "下行"})
 MAX_BIFF8_DATA_ROWS = 65_533
 MAX_CELL_TEXT_LENGTH = 32_767
 UNSAFE_FILENAME_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-INTERVAL_DIRECTION_PATTERN = re.compile(
-    r"(?P<interval>[\u4e00-\u9fffA-Za-z0-9]{1,12})区间(?P<direction>上行|下行)"
-)
+INTERVAL_DIRECTION_PATTERN = re.compile(r"(?P<interval>[\u4e00-\u9fffA-Za-z0-9]{1,12})区间(?P<direction>上行|下行)")
 
 
 def _source_values(item: FormalTestContent) -> tuple[str, ...]:
@@ -88,8 +86,7 @@ def _build_location(request: ExcelProcessRequest) -> LocationRow:
                 path=["testLocation", "endStation"],
             )
         stations = tuple(
-            _require_text(value, ["testLocation", "stations"])
-            for value in (location.stations or [start_station])
+            _require_text(value, ["testLocation", "stations"]) for value in (location.stations or [start_station])
         )
         if stations[0] != start_station:
             raise BusinessError(
@@ -120,9 +117,7 @@ def _build_location(request: ExcelProcessRequest) -> LocationRow:
     return LocationRow(location_type, direction, start_station, end_station, ())
 
 
-def _catalog_steps(
-    item: FormalTestContent, repository: CatalogRepository
-) -> list[dict[str, object]]:
+def _catalog_steps(item: FormalTestContent, repository: CatalogRepository) -> list[dict[str, object]]:
     """Resolve the fixed operation/result hierarchy stored in SQLite.
 
     Resolve rules by equipment type first, then subtype, then status/action.
@@ -146,22 +141,17 @@ def _catalog_steps(
         subtype_candidates = [
             candidate
             for candidate in candidates
-            if str(candidate.get("equipmentSubtype", "")).strip().casefold()
-            == equipment_subtype.casefold()
+            if str(candidate.get("equipmentSubtype", "")).strip().casefold() == equipment_subtype.casefold()
         ]
         if subtype_candidates:
             candidates = subtype_candidates
         else:
             generic_candidates = [
-                candidate
-                for candidate in candidates
-                if not str(candidate.get("equipmentSubtype", "")).strip()
+                candidate for candidate in candidates if not str(candidate.get("equipmentSubtype", "")).strip()
             ]
             if generic_candidates:
                 candidates = generic_candidates
-            elif any(
-                str(candidate.get("equipmentSubtype", "")).strip() for candidate in candidates
-            ):
+            elif any(str(candidate.get("equipmentSubtype", "")).strip() for candidate in candidates):
                 # Do not fall through to another subtype under the same broad
                 # equipment type. That can turn an unsupported ASD reset into an
                 # unrelated 400V cutoff rule, for example.
@@ -171,10 +161,7 @@ def _catalog_steps(
                 )
     if not candidates:
         raise BusinessError(
-            (
-                f"未找到设备类型“{item.equipment_subtype or item.equipment_type}”"
-                "对应的操作步骤和输出结果"
-            ),
+            (f"未找到设备类型“{item.equipment_subtype or item.equipment_type}”对应的操作步骤和输出结果"),
             "CATALOG_RULE_NOT_FOUND",
         )
     interval, direction = _interval_context(item)
@@ -186,8 +173,7 @@ def _catalog_steps(
             candidate
             for candidate in candidates
             if equipment_status
-            and str(candidate.get("equipmentStatus", "")).strip().casefold()
-            == equipment_status.casefold()
+            and str(candidate.get("equipmentStatus", "")).strip().casefold() == equipment_status.casefold()
         ),
         None,
     )
@@ -196,11 +182,7 @@ def _catalog_steps(
     # “动作状态”/“动作反馈” rows use the cloned status-specific rules above.
     if selected is None and not equipment_status and equipment_subtype == "手动防火阀":
         selected = next(
-            (
-                candidate
-                for candidate in candidates
-                if not str(candidate.get("equipmentStatus", "")).strip()
-            ),
+            (candidate for candidate in candidates if not str(candidate.get("equipmentStatus", "")).strip()),
             None,
         )
     if selected is None and direction:
@@ -208,8 +190,7 @@ def _catalog_steps(
             (
                 candidate
                 for candidate in candidates
-                if direction in str(candidate["content"])
-                or direction in str(candidate.get("equipmentStatus", ""))
+                if direction in str(candidate["content"]) or direction in str(candidate.get("equipmentStatus", ""))
             ),
             None,
         )
@@ -221,10 +202,7 @@ def _catalog_steps(
             and any(status.casefold() in value.casefold() for value in source_values)
         ]
         if status_matches:
-            longest_status = max(
-                len(str(candidate.get("equipmentStatus", "")).strip())
-                for candidate in status_matches
-            )
+            longest_status = max(len(str(candidate.get("equipmentStatus", "")).strip()) for candidate in status_matches)
             best_matches = [
                 candidate
                 for candidate in status_matches
@@ -237,8 +215,7 @@ def _catalog_steps(
             (
                 candidate
                 for candidate in candidates
-                if "综合故障" in str(candidate.get("equipmentStatus", ""))
-                or "综合故障" in str(candidate["content"])
+                if "综合故障" in str(candidate.get("equipmentStatus", "")) or "综合故障" in str(candidate["content"])
             ),
             None,
         )
@@ -251,13 +228,9 @@ def _catalog_steps(
             and any(content in value for value in source_values)
         ]
         if content_matches:
-            longest_content = max(
-                len(str(candidate["content"]).strip()) for candidate in content_matches
-            )
+            longest_content = max(len(str(candidate["content"]).strip()) for candidate in content_matches)
             best_matches = [
-                candidate
-                for candidate in content_matches
-                if len(str(candidate["content"]).strip()) == longest_content
+                candidate for candidate in content_matches if len(str(candidate["content"]).strip()) == longest_content
             ]
             if len(best_matches) == 1:
                 selected = best_matches[0]
@@ -302,9 +275,7 @@ def _catalog_steps(
     return steps
 
 
-def _infer_electric_damper_statuses(
-    request: ExcelProcessRequest, contents: list[dict[str, object]]
-) -> None:
+def _infer_electric_damper_statuses(request: ExcelProcessRequest, contents: list[dict[str, object]]) -> None:
     """Recover the two statuses omitted by the legacy FF2 source sheet.
 
     The original fire-damper workbook emits two consecutive rows for each
@@ -380,9 +351,7 @@ def prepare_formal_request(request: ExcelProcessRequest, settings: Settings) -> 
     return ExcelProcessRequest.model_validate(payload)
 
 
-def _resolve_workspace_configs(
-    request: ExcelProcessRequest, settings: Settings
-) -> ExcelProcessRequest:
+def _resolve_workspace_configs(request: ExcelProcessRequest, settings: Settings) -> ExcelProcessRequest:
     """Resolve the explicit 联调配置编码 before legacy catalog matching.
 
     The legacy FAS keyword matcher remains the fallback when the new column is
@@ -419,9 +388,7 @@ def _resolve_workspace_configs(
             results = []
             for result in step["results"]:
                 disciplines = result.get("responsibleDisciplines") or ["自动化"]
-                results.append(
-                    {"description": result["description"], "responsibleDisciplines": disciplines}
-                )
+                results.append({"description": result["description"], "responsibleDisciplines": disciplines})
             if not results:
                 raise BusinessError("联调配置未配置输出结果", "WORKSPACE_CONFIG_INCOMPLETE")
             steps.append(
@@ -630,9 +597,7 @@ def _filename_profile(request: ExcelProcessRequest) -> tuple[str, str, str]:
     return "00", function, device
 
 
-def _formal_filename(
-    request: ExcelProcessRequest, workbook: FormalWorkbook, generated_at: datetime
-) -> str:
+def _formal_filename(request: ExcelProcessRequest, workbook: FormalWorkbook, generated_at: datetime) -> str:
     station = (
         workbook.location.stations[0]
         if workbook.location.stations

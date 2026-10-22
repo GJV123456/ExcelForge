@@ -39,9 +39,7 @@ def process_excel(payload: ExcelProcessRequest, request: Request) -> Response:
         content=result.content,
         media_type=result.media_type,
         headers={
-            "Content-Disposition": (
-                f"attachment; filename=\"formal-output.xls\"; filename*=UTF-8''{filename}"
-            ),
+            "Content-Disposition": (f"attachment; filename=\"formal-output.xls\"; filename*=UTF-8''{filename}"),
             "X-Generation-ID": generation_id,
         },
     )

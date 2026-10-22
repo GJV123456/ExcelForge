@@ -29,4 +29,3 @@ def test_static_frontend_and_spa_fallback_do_not_shadow_api(tmp_path: Path) -> N
     assert health.status_code == 200 and health.json()["status"] == "ok"
     assert missing_api.status_code == 404
     assert missing_api.headers["content-type"].startswith("application/json")
-

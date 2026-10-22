@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.utils.formal_workbook import copy_template_bytes, open_generated_workbook
 from app.utils.template_provider import (
     DEFAULT_TEMPLATE_PATH,
     EXPECTED_SHEET_NAMES,
@@ -10,7 +11,6 @@ from app.utils.template_provider import (
     file_sha256,
     open_template,
 )
-from app.utils.formal_workbook import copy_template_bytes, open_generated_workbook
 
 
 def _object_signature(value: Any, fields: tuple[str, ...]) -> tuple[Any, ...]:
@@ -115,4 +115,3 @@ def test_template_roundtrip_preserves_fixed_contract(tmp_path: Path) -> None:
 
         for column in range(source_sheet.ncols):
             assert _column_width(reopened_sheet, column) == _column_width(source_sheet, column)
-

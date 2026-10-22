@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import re
 import sqlite3
 from pathlib import Path
 
@@ -102,7 +101,8 @@ def _insert_rule(
                     )
                     discipline_id = (int(discipline_cursor.lastrowid),)
                 connection.execute(
-                    "INSERT INTO result_output_disciplines(result_output_id, discipline_id, sort_order) VALUES (?, ?, ?)",
+                    "INSERT INTO result_output_disciplines("
+                    "result_output_id, discipline_id, sort_order) VALUES (?, ?, ?)",
                     (result_id, int(discipline_id[0]), discipline_order),
                 )
 

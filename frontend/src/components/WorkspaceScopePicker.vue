@@ -1,15 +1,52 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useWorkspaceStore } from '../store/workspace'
 import { useExcelStore } from '../store/excel'
+import { getWorkspaceDebugItems } from '../api/workspace'
+import { useRouter } from 'vue-router'
 
-defineProps({ compact: { type: Boolean, default: false } })
+const props = defineProps({
+  compact: { type: Boolean, default: false },
+  lineOnly: { type: Boolean, default: false },
+})
 
 const workspace = useWorkspaceStore()
 const excel = useExcelStore()
-const projectsForProfession = computed(() => workspace.projects.filter((item) => item.professionId === workspace.selectedProfessionId))
+const router = useRouter()
+const projectsForLine = computed(() => workspace.projects.filter((item) => !item.lineId || String(item.lineId) === String(workspace.selectedLineId)))
+const debugSubitems = ref([])
+const debugDivisions = ref([])
+const debugItemsError = ref('')
+let debugItemsRequestId = 0
+const loadDebugItems = async () => {
+  const requestId = ++debugItemsRequestId
+  debugSubitems.value = []; debugDivisions.value = []
+  debugItemsError.value = ''
+  if (!workspace.isSelected) return
+  try {
+    const base = { lineId: workspace.selectedLineId, professionId: workspace.selectedProfessionId, projectId: workspace.selectedProjectId }
+    const subitems = (await getWorkspaceDebugItems({ ...base, category: 'debug_subitems' })).data?.data || []
+    if (requestId !== debugItemsRequestId) return
+    debugSubitems.value = subitems
+    if (workspace.selectedDebugSubitemId && !subitems.some((item) => String(item.id) === String(workspace.selectedDebugSubitemId))) {
+      workspace.setDebugSubitem(null)
+      return
+    }
+    if (workspace.selectedDebugSubitemId) {
+      debugDivisions.value = (await getWorkspaceDebugItems({ ...base, category: 'debug_divisions', parentId: workspace.selectedDebugSubitemId })).data?.data || []
+      if (requestId !== debugItemsRequestId) return
+      if (workspace.selectedDebugDivisionId && !debugDivisions.value.some((item) => String(item.id) === String(workspace.selectedDebugDivisionId))) workspace.setDebugDivision(null)
+    }
+  } catch (error) {
+    if (requestId !== debugItemsRequestId) return
+    debugSubitems.value = []
+    debugDivisions.value = []
+    debugItemsError.value = error.response?.data?.detail || error.message || '调试层级加载失败，请刷新重试'
+  }
+}
+watch(() => [workspace.selectedLineId, workspace.selectedProfessionId, workspace.selectedProjectId, workspace.selectedDebugSubitemId], loadDebugItems, { immediate: true })
 const syncEngineProject = () => {
   const project = workspace.selectedProject
   excel.setIntegration(project?.engineCode || project?.code || '')
@@ -26,19 +63,29 @@ const retry = async () => {
 </script>
 
 <template>
-  <div v-if="compact" class="scope-picker-compact" aria-label="当前工作范围">
+  <div v-if="props.compact" class="scope-picker-compact" :aria-label="props.lineOnly ? '当前线路' : '当前工作范围'">
     <el-select v-model="workspace.selectedLineId" :loading="workspace.loading" :disabled="workspace.loading" placeholder="线路" aria-label="线路" no-data-text="暂无线路，请先到系统管理新增" @change="workspace.setLine">
       <el-option v-for="item in workspace.lines" :key="item.id" :label="item.name" :value="item.id" />
     </el-select>
-    <el-select v-model="workspace.selectedProfessionId" :loading="workspace.loading" :disabled="workspace.loading" placeholder="专业" aria-label="专业" no-data-text="暂无专业，请先到系统管理新增" @change="workspace.setProfession">
+    <el-select v-if="!props.lineOnly" v-model="workspace.selectedProfessionId" :loading="workspace.loading" :disabled="workspace.loading" placeholder="专业" aria-label="专业" no-data-text="暂无专业，请先到系统管理新增" @change="workspace.setProfession">
       <el-option v-for="item in workspace.professions" :key="item.id" :label="item.name" :value="item.id" />
     </el-select>
-    <el-select v-model="workspace.selectedProjectId" :loading="workspace.loading" :disabled="workspace.loading || !workspace.selectedProfessionId" placeholder="联调项目" aria-label="联调项目" no-data-text="当前专业暂无联调项目" @change="workspace.setProject">
-      <el-option v-for="item in projectsForProfession" :key="item.id" :label="item.name" :value="item.id" />
+    <el-select v-if="!props.lineOnly" v-model="workspace.selectedProjectId" :loading="workspace.loading" :disabled="workspace.loading || !workspace.selectedLineId" placeholder="联调项目" aria-label="联调项目" no-data-text="当前线路暂无联调项目" @change="workspace.setProject">
+      <el-option v-for="item in projectsForLine" :key="item.id" :label="item.code" :value="item.id" />
+    </el-select>
+    <el-select v-if="!props.lineOnly" v-model="workspace.selectedDebugSubitemId" clearable :disabled="!workspace.selectedProjectId" placeholder="调试子项" aria-label="调试子项" no-data-text="暂无调试子项" @change="workspace.setDebugSubitem">
+      <el-option v-for="item in debugSubitems" :key="item.id" :label="item.name" :value="item.id" />
+    </el-select>
+    <el-select v-if="!props.lineOnly" v-model="workspace.selectedDebugDivisionId" clearable :disabled="!workspace.selectedDebugSubitemId" placeholder="调试分项" aria-label="调试分项" no-data-text="暂无调试分项" @change="workspace.setDebugDivision">
+      <el-option v-for="item in debugDivisions" :key="item.id" :label="item.name" :value="item.id" />
     </el-select>
     <el-alert v-if="workspace.error" type="error" :closable="false" show-icon class="scope-compact-alert" :title="workspace.error" />
+    <el-alert v-else-if="debugItemsError && !props.lineOnly" type="error" :closable="false" show-icon class="scope-compact-alert" :title="debugItemsError" />
   </div>
-  <section v-else class="scope-picker" aria-label="当前工作范围">
+  <el-alert v-if="props.compact && !props.lineOnly && workspace.selectedLineId && !workspace.loading && !projectsForLine.length" type="warning" :closable="false" show-icon class="scope-no-project" title="当前线路还没有联调项目，工作台与规则列表暂时为空。">
+    <template #default><span>到系统管理的“联调项目管理”新增项目，或复制其他线路/专业的项目；之后即可继续维护调试子项、分项和配置规则。</span><el-button link type="primary" @click="router.push('/admin')">前往联调项目管理</el-button></template>
+  </el-alert>
+  <section v-if="!props.compact" class="scope-picker" aria-label="当前工作范围">
     <div class="scope-picker-heading">
       <div>
         <span class="scope-picker-title">选择工作范围</span>
@@ -49,6 +96,7 @@ const retry = async () => {
     <el-alert v-if="workspace.error" type="error" :closable="false" show-icon class="scope-alert" :title="workspace.error">
       <template #default><span>请确认后端已启动并使用正确的数据库路径。</span></template>
     </el-alert>
+    <el-alert v-else-if="debugItemsError" type="error" :closable="false" show-icon class="scope-alert" :title="debugItemsError" />
     <div class="scope-fields">
       <label>
         <span>线路</span>
@@ -64,10 +112,12 @@ const retry = async () => {
       </label>
       <label>
         <span>联调项目</span>
-        <el-select v-model="workspace.selectedProjectId" :loading="workspace.loading" :disabled="workspace.loading || !workspace.selectedProfessionId" placeholder="请选择联调项目" no-data-text="当前专业暂无联调项目" @change="workspace.setProject">
-          <el-option v-for="item in projectsForProfession" :key="item.id" :label="item.name" :value="item.id" />
+        <el-select v-model="workspace.selectedProjectId" :loading="workspace.loading" :disabled="workspace.loading || !workspace.selectedLineId" placeholder="请选择联调项目" no-data-text="当前线路暂无联调项目" @change="workspace.setProject">
+          <el-option v-for="item in projectsForLine" :key="item.id" :label="item.code" :value="item.id" />
         </el-select>
       </label>
+      <label><span>调试子项</span><el-select v-model="workspace.selectedDebugSubitemId" clearable :disabled="!workspace.selectedProjectId" placeholder="请选择调试子项" @change="workspace.setDebugSubitem"><el-option v-for="item in debugSubitems" :key="item.id" :label="item.name" :value="item.id" /></el-select></label>
+      <label><span>调试分项</span><el-select v-model="workspace.selectedDebugDivisionId" clearable :disabled="!workspace.selectedDebugSubitemId" placeholder="请选择调试分项" @change="workspace.setDebugDivision"><el-option v-for="item in debugDivisions" :key="item.id" :label="item.name" :value="item.id" /></el-select></label>
     </div>
     <div v-if="!workspace.loading && !workspace.error && (!workspace.lines.length || !workspace.professions.length || !workspace.projects.length)" class="scope-empty">
       暂无可用层级，请超级管理员进入“系统管理”配置线路、专业和联调项目。
@@ -77,12 +127,15 @@ const retry = async () => {
 
 <style scoped>
 .scope-picker { margin: 18px 0 22px; padding: 18px 20px 20px; border: 1px solid #dfe8f5; border-radius: 14px; background: linear-gradient(135deg, #fbfdff, #f5f8ff); box-shadow: 0 8px 24px rgba(47, 78, 125, .06); }
-.scope-picker-compact { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+.scope-picker-compact { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex: 0 0 auto; }
 .scope-picker-compact :deep(.el-select:nth-of-type(1)) { width: 104px; }
 .scope-picker-compact :deep(.el-select:nth-of-type(2)) { width: 116px; }
 .scope-picker-compact :deep(.el-select:nth-of-type(3)) { width: 112px; }
+.scope-picker-compact :deep(.el-select:nth-of-type(4)) { width: 142px; }
+.scope-picker-compact :deep(.el-select:nth-of-type(5)) { width: 142px; }
 .scope-picker-compact :deep(.el-select__wrapper) { min-height: 36px; padding-right: 9px; padding-left: 11px; }
 .scope-compact-alert { position: absolute; top: 100%; right: 0; z-index: 10; width: min(420px, 90vw); }
+.scope-no-project { margin-top: 10px; max-width: 900px; }
 .scope-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 15px; }
 .scope-picker-title { display: block; color: #243653; font-size: 16px; font-weight: 700; }
 .scope-picker-hint { display: block; margin-top: 4px; color: #8491a5; font-size: 12px; }

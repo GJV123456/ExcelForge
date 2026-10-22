@@ -52,9 +52,7 @@ def open_template(path: Path | None = None) -> Book:
 def validate_template_structure(workbook: Book) -> None:
     """Validate the fixed five-sheet contract needed by all writer modes."""
     if tuple(workbook.sheet_names()) != EXPECTED_SHEET_NAMES:
-        raise TemplateValidationError(
-            f"Unexpected sheet names or order: {workbook.sheet_names()}"
-        )
+        raise TemplateValidationError(f"Unexpected sheet names or order: {workbook.sheet_names()}")
 
     for sheet in workbook.sheets():
         if sheet.nrows < 4:

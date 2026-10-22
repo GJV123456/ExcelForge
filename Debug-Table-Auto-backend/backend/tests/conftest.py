@@ -11,4 +11,3 @@ from app.main import create_app
 def client() -> TestClient:
     with TestClient(create_app(Settings(mode="formal"))) as test_client:
         yield test_client
-

@@ -178,5 +178,3 @@ def test_registered_account_is_persisted_and_reloaded_from_sqlite(tmp_path: Path
             },
         )
     assert login.status_code == 200
-
-

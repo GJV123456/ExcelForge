@@ -33,4 +33,3 @@ def test_packaged_environment_credentials_override_initial_login() -> None:
     )
 
     assert apply_packaged_defaults(original, is_frozen=True) is original
-

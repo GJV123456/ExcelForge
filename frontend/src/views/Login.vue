@@ -1,9 +1,9 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
-import { login, register } from '../api/auth'
+import { login } from '../api/auth'
 import { useUserStore } from '../store/user'
 import loginBackground from '../assets/images/login-bg.png'
 
@@ -12,7 +12,6 @@ const route = useRoute()
 const user = useUserStore()
 const formRef = ref()
 const loading = ref(false)
-const mode = ref('login')
 const rememberKey = 'excelforge_login_remember'
 const getRememberedLogin = () => {
   try { return JSON.parse(localStorage.getItem(rememberKey) || '{}') }
@@ -22,22 +21,14 @@ const rememberedLogin = getRememberedLogin()
 const form = reactive({
   username: rememberedLogin.username || '',
   password: '',
-  displayName: '',
-  confirmPassword: '',
   agree: true,
   remember: Boolean(rememberedLogin.remember)
 })
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-  displayName: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
-  confirmPassword: [{ required: true, message: '请再次输入密码', trigger: 'blur' }],
   agree: [{ validator: (_, value, callback) => value ? callback() : callback(new Error('请先同意服务条款')), trigger: 'change' }]
 }
-const isRegister = computed(() => mode.value === 'register')
-const pageTitle = computed(() => isRegister.value ? '创建首个账号' : '账户登录')
-const submitLabel = computed(() => isRegister.value ? '创建账号' : '登录')
-const switchMode = () => { mode.value = isRegister.value ? 'login' : 'register'; form.confirmPassword = '' }
 const syncRememberedLogin = () => {
   if (!form.remember) {
     localStorage.removeItem(rememberKey)
@@ -54,21 +45,7 @@ const submit = async () => {
   if (!form.remember) localStorage.removeItem(rememberKey)
   loading.value = true
   try {
-    const requestPayload = isRegister.value
-      ? {
-          username: form.username,
-          password: form.password,
-          confirmPassword: form.confirmPassword,
-          displayName: form.displayName,
-          agree: form.agree
-        }
-      : {
-          username: form.username,
-          password: form.password,
-          agree: form.agree,
-          remember: form.remember
-        }
-    const { data } = await (isRegister.value ? register(requestPayload) : login(requestPayload))
+    const { data } = await login({ username: form.username, password: form.password, agree: form.agree, remember: form.remember })
     const responsePayload = data?.data || data
     if (!responsePayload?.token) throw new Error(data?.message || '登录失败')
     syncRememberedLogin()
@@ -78,7 +55,7 @@ const submit = async () => {
       lineId: responsePayload.lineId || null,
       professionId: responsePayload.professionId || null
     })
-    ElMessage.success(isRegister.value ? '账号创建成功' : '登录成功')
+    ElMessage.success('登录成功')
     router.replace(route.query.redirect || '/')
   } catch (error) { ElMessage.error(error.response ? (error.response.data?.detail || error.response.data?.message || '登录失败') : (error.message || '服务器连接失败')) }
   finally { loading.value = false }
@@ -88,7 +65,7 @@ const submit = async () => {
 <template>
   <main class="login-page">
     <header class="login-header"><div class="header-inner"><div class="brand"><span class="brand-mark">EF</span><strong>ExcelForge</strong><span class="header-title">欢迎登录</span></div><span class="entry-link">Excel 数据格式转换与测试内容生成工具</span></div></header>
-    <section class="login-section" :style="{ backgroundImage: `url(${loginBackground})` }"><div class="login-wrapper"><nav><span>{{ pageTitle }}</span><small>ExcelForge</small></nav><div class="account-box"><el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit"><el-form-item prop="username"><el-input v-model="form.username" size="large" placeholder="请输入用户名"><template #prefix><el-icon><User /></el-icon></template></el-input></el-form-item><el-form-item v-if="isRegister" prop="displayName"><el-input v-model="form.displayName" size="large" placeholder="请输入显示名称" /></el-form-item><el-form-item prop="password"><el-input v-model="form.password" size="large" type="password" show-password placeholder="请输入密码（至少 8 位）" @keyup.enter="submit"><template #prefix><el-icon><Lock /></el-icon></template></el-input></el-form-item><el-form-item v-if="isRegister" prop="confirmPassword"><el-input v-model="form.confirmPassword" size="large" type="password" show-password placeholder="请再次输入密码" /></el-form-item><el-form-item class="agree-row" prop="agree"><el-checkbox v-model="form.agree">我已阅读 <a href="javascript:void(0)">《隐私条款》</a> 和 <a href="javascript:void(0)">《服务条款》</a></el-checkbox></el-form-item><el-button class="submit-button" type="primary" :loading="loading" @click="submit">{{ submitLabel }}</el-button></el-form><div class="account-actions"><el-checkbox v-if="!isRegister" v-model="form.remember">记住账号</el-checkbox><el-button text @click="switchMode">{{ isRegister ? '返回登录' : '首次使用？创建账号' }}</el-button></div></div></div></section>
+    <section class="login-section" :style="{ backgroundImage: `url(${loginBackground})` }"><div class="login-wrapper"><nav><span>账户登录</span><small>ExcelForge</small></nav><div class="account-box"><el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit"><el-form-item prop="username"><el-input v-model="form.username" size="large" placeholder="请输入用户名"><template #prefix><el-icon><User /></el-icon></template></el-input></el-form-item><el-form-item prop="password"><el-input v-model="form.password" size="large" type="password" show-password placeholder="请输入密码" @keyup.enter="submit"><template #prefix><el-icon><Lock /></el-icon></template></el-input></el-form-item><el-form-item class="agree-row" prop="agree"><el-checkbox v-model="form.agree">我已阅读 <a href="javascript:void(0)">《隐私条款》</a> 和 <a href="javascript:void(0)">《服务条款》</a></el-checkbox></el-form-item><el-button class="submit-button" type="primary" :loading="loading" @click="submit">登录</el-button></el-form><div class="account-actions"><el-checkbox v-model="form.remember">记住账号</el-checkbox><span>请联系管理员创建账号</span></div></div></div></section>
     <footer class="login-footer"><p><a href="javascript:void(0)">奋进</a><a href="javascript:void(0)">专业</a><a href="javascript:void(0)">卓越</a><a href="javascript:void(0)">自豪</a></p><p>Copyright © ExcelForge</p></footer>
   </main>
 </template>

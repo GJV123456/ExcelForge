@@ -66,9 +66,7 @@ def test_catalog_matching_does_not_fall_back_to_a_different_subtype() -> None:
         **_rule("切非", "400V切非操作"),
         "equipmentSubtype": "400V切非",
     }
-    item = _item("远程复位").model_copy(
-        update={"equipment_type": "控制模块", "equipment_subtype": "吸气式主机"}
-    )
+    item = _item("远程复位").model_copy(update={"equipment_type": "控制模块", "equipment_subtype": "吸气式主机"})
 
     with pytest.raises(BusinessError) as error:
         _catalog_steps(item, _CatalogStub([wrong_subtype]))  # type: ignore[arg-type]
@@ -99,7 +97,12 @@ def test_fault_is_inferred_from_generated_content_when_frontend_status_is_missin
     ("equipment_type", "subtype", "statuses", "status"),
     [
         ("监视模块", "AFC", ["AFC切非反馈", "AFC切非"], "AFC切非反馈"),
-        ("监视模块", "感温光纤", ["区间上行感温光纤报警反馈", "区间下行感温光纤报警反馈"], "区间下行感温光纤报警反馈"),
+        (
+            "监视模块",
+            "感温光纤",
+            ["区间上行感温光纤报警反馈", "区间下行感温光纤报警反馈"],
+            "区间下行感温光纤报警反馈",
+        ),
         ("监视模块", "消防泵", ["消防泵动作反馈", "消防泵故障反馈"], "消防泵故障反馈"),
     ],
 )
@@ -181,6 +184,7 @@ def test_manual_fire_damper_status_selects_its_own_rule() -> None:
         }
         for status in ("动作状态", "动作反馈")
     ]
+
     class _ManualCatalog(_CatalogStub):
         def list_test_contents(self, *, equipment_type: str) -> list[dict[str, object]]:
             return self.rules
@@ -198,5 +202,3 @@ def test_manual_fire_damper_status_selects_its_own_rule() -> None:
         )
         steps = _catalog_steps(item, _ManualCatalog(rules))  # type: ignore[arg-type]
         assert steps[0]["description"] == f"{status}步骤"
-
-

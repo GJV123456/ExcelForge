@@ -66,19 +66,78 @@ SUBTYPE_STATUSES: dict[tuple[str, str], list[str]] = {
     ("控制模块", "EPS"): ["状态反馈", "启动控制"],
     ("监视模块", "垂直电梯"): ["垂直电梯状态反馈", "垂直电梯归首控制"],
     ("控制模块", "垂直电梯"): ["垂直电梯状态反馈", "垂直电梯归首控制"],
-    ("监视模块", "防火卷帘"): ["防火卷帘一次降落反馈", "防火卷帘一次降落控制", "防火卷帘二次降落反馈", "防火卷帘二次降落控制"],
-    ("控制模块", "防火卷帘"): ["防火卷帘一次降落反馈", "防火卷帘一次降落控制", "防火卷帘二次降落反馈", "防火卷帘二次降落控制"],
+    ("监视模块", "防火卷帘"): [
+        "防火卷帘一次降落反馈",
+        "防火卷帘一次降落控制",
+        "防火卷帘二次降落反馈",
+        "防火卷帘二次降落控制",
+    ],
+    ("控制模块", "防火卷帘"): [
+        "防火卷帘一次降落反馈",
+        "防火卷帘一次降落控制",
+        "防火卷帘二次降落反馈",
+        "防火卷帘二次降落控制",
+    ],
     ("监视模块", "400V切非"): ["切非反馈"],
     ("控制模块", "400V切非"): ["切非"],
-    ("监视模块", "消防泵"): ["消防泵手/自动反馈", "消防泵动作反馈", "消防泵故障反馈", "压力开关动作反馈", "流量开关动作反馈", "高水位报警反馈", "低水位报警反馈", "最低水位报警反馈", "稳压泵动作反馈", "稳压泵故障反馈", "消防泵启动控制", "巡检柜报警反馈", "信号阀动作反馈", "水流指示器动作反馈"],
-    ("控制模块", "消防泵"): ["消防泵手/自动反馈", "消防泵动作反馈", "消防泵故障反馈", "压力开关动作反馈", "流量开关动作反馈", "高水位报警反馈", "低水位报警反馈", "最低水位报警反馈", "稳压泵动作反馈", "稳压泵故障反馈", "消防泵启动控制", "巡检柜报警反馈", "信号阀动作反馈", "水流指示器动作反馈"],
+    ("监视模块", "消防泵"): [
+        "消防泵手/自动反馈",
+        "消防泵动作反馈",
+        "消防泵故障反馈",
+        "压力开关动作反馈",
+        "流量开关动作反馈",
+        "高水位报警反馈",
+        "低水位报警反馈",
+        "最低水位报警反馈",
+        "稳压泵动作反馈",
+        "稳压泵故障反馈",
+        "消防泵启动控制",
+        "巡检柜报警反馈",
+        "信号阀动作反馈",
+        "水流指示器动作反馈",
+    ],
+    ("控制模块", "消防泵"): [
+        "消防泵手/自动反馈",
+        "消防泵动作反馈",
+        "消防泵故障反馈",
+        "压力开关动作反馈",
+        "流量开关动作反馈",
+        "高水位报警反馈",
+        "低水位报警反馈",
+        "最低水位报警反馈",
+        "稳压泵动作反馈",
+        "稳压泵故障反馈",
+        "消防泵启动控制",
+        "巡检柜报警反馈",
+        "信号阀动作反馈",
+        "水流指示器动作反馈",
+    ],
     ("监视模块", "门禁"): ["门禁释放反馈", "门禁释放"],
     ("控制模块", "门禁"): ["门禁释放反馈", "门禁释放"],
-    ("监视模块", "电气火灾、消防电源、应急疏散"): ["电气火灾监控报警", "电气火灾监控故障反馈", "消防电源监控系统报警", "消防电源监控系统故障反馈", "应急照明及疏散指示系统状态反馈", "应急照明及疏散指示系统模式控制"],
-    ("控制模块", "电气火灾、消防电源、应急疏散"): ["电气火灾监控报警", "电气火灾监控故障反馈", "消防电源监控系统报警", "消防电源监控系统故障反馈", "应急照明及疏散指示系统状态反馈", "应急照明及疏散指示系统模式控制"],
+    ("监视模块", "电气火灾、消防电源、应急疏散"): [
+        "电气火灾监控报警",
+        "电气火灾监控故障反馈",
+        "消防电源监控系统报警",
+        "消防电源监控系统故障反馈",
+        "应急照明及疏散指示系统状态反馈",
+        "应急照明及疏散指示系统模式控制",
+    ],
+    ("控制模块", "电气火灾、消防电源、应急疏散"): [
+        "电气火灾监控报警",
+        "电气火灾监控故障反馈",
+        "消防电源监控系统报警",
+        "消防电源监控系统故障反馈",
+        "应急照明及疏散指示系统状态反馈",
+        "应急照明及疏散指示系统模式控制",
+    ],
     ("控制模块", "声光报警器"): ["声光报警控制", "声光交替模块"],
     ("控制模块", "PA"): ["PA广播", "PA广播状态保持", "广播交替模块"],
-    ("控制模块", "主机手自动、人工确认等"): ["FAS主机人工确定按钮", "FAS主机自动状态按钮", "气灭主机自动状态按钮", "FAS主机综合火警"],
+    ("控制模块", "主机手自动、人工确认等"): [
+        "FAS主机人工确定按钮",
+        "FAS主机自动状态按钮",
+        "气灭主机自动状态按钮",
+        "FAS主机综合火警",
+    ],
 }
 
 
@@ -107,7 +166,19 @@ def seed(database_path: Path) -> None:
         )
         # This seed file is the authoritative taxonomy. Rebuild only hierarchy
         # metadata; test rules and equipment type rows are left untouched.
-        connection.execute("CREATE TABLE IF NOT EXISTS test_content_selectors (id INTEGER PRIMARY KEY AUTOINCREMENT, test_content_id INTEGER NOT NULL, equipment_type TEXT NOT NULL DEFAULT '', equipment_subtype TEXT NOT NULL DEFAULT '', FOREIGN KEY (test_content_id) REFERENCES test_contents(id) ON DELETE CASCADE, UNIQUE (test_content_id, equipment_type, equipment_subtype))")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS test_content_selectors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_content_id INTEGER NOT NULL,
+                equipment_type TEXT NOT NULL DEFAULT '',
+                equipment_subtype TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (test_content_id)
+                    REFERENCES test_contents(id) ON DELETE CASCADE,
+                UNIQUE (test_content_id, equipment_type, equipment_subtype)
+            )
+            """
+        )
         connection.execute("""
             CREATE TABLE IF NOT EXISTS equipment_type_statuses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,7 +252,9 @@ def seed(database_path: Path) -> None:
                         (parent_id, subtype_name),
                     ).fetchone()[0]
                 )
-                for status_order, status_name in enumerate(SUBTYPE_STATUSES.get((parent_name, subtype_name), []), start=1):
+                for status_order, status_name in enumerate(
+                    SUBTYPE_STATUSES.get((parent_name, subtype_name), []), start=1
+                ):
                     connection.execute(
                         """
                         INSERT INTO equipment_subtype_statuses(
@@ -220,7 +293,9 @@ def seed(database_path: Path) -> None:
             ).fetchall()
             for rule_row in rule_rows:
                 connection.execute(
-                    "INSERT OR IGNORE INTO test_content_selectors(test_content_id, equipment_type, equipment_subtype) VALUES (?, ?, ?)",
+                    "INSERT OR IGNORE INTO test_content_selectors("
+                    "test_content_id, equipment_type, equipment_subtype"
+                    ") VALUES (?, ?, ?)",
                     (int(rule_row["id"]), "防火阀", subtype_name),
                 )
 

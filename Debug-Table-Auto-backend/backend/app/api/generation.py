@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from urllib.parse import quote
-
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Path, Query, Request, Response
 
@@ -26,9 +25,7 @@ def list_generations(
     offset: Annotated[int, Query(ge=0)] = 0,
     integration_code: Annotated[str | None, Query(alias="integrationCode", min_length=1, max_length=32)] = None,
 ) -> GenerationListResponse:
-    data = _repository(request).list_generations(
-        limit=limit, offset=offset, integration_code=integration_code
-    )
+    data = _repository(request).list_generations(limit=limit, offset=offset, integration_code=integration_code)
     return {"data": data, "meta": {"count": len(data)}}
 
 
@@ -67,9 +64,6 @@ def download_generation(
         content=content,
         media_type="application/vnd.ms-excel",
         headers={
-            "Content-Disposition": (
-                f"attachment; filename=\"formal-output.xls\"; "
-                f"filename*=UTF-8''{encoded_filename}"
-            )
+            "Content-Disposition": (f"attachment; filename=\"formal-output.xls\"; filename*=UTF-8''{encoded_filename}")
         },
     )

@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import sqlite3
-from uuid import uuid4
 from contextlib import closing
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from app.exceptions import BusinessError
 from app.schemas.catalog import (
     DisciplineItem,
     DisciplineListItem,
     DisciplineWriteRequest,
-    EquipmentStatusWriteRequest,
     EquipmentHierarchyItem,
-    EquipmentSubtypeWriteRequest,
+    EquipmentStatusWriteRequest,
     EquipmentSubtypeItem,
+    EquipmentSubtypeWriteRequest,
     EquipmentTypeItem,
     EquipmentTypeSummary,
     EquipmentTypeWriteRequest,
@@ -42,24 +42,87 @@ _BUILTIN_SUBTYPE_STATUSES: dict[tuple[str, str], list[str]] = {
     ("控制模块", "吸气式主机"): ["远程复位"],
     ("监视模块", "感温电缆"): ["报警反馈", "故障反馈", "远程复位"],
     ("控制模块", "感温电缆"): ["报警反馈", "故障反馈", "远程复位"],
-    ("监视模块", "感温光纤"): ["感温光纤综合故障", "区间上行感温光纤报警反馈", "区间下行感温光纤报警反馈"],
+    ("监视模块", "感温光纤"): [
+        "感温光纤综合故障",
+        "区间上行感温光纤报警反馈",
+        "区间下行感温光纤报警反馈",
+    ],
     ("监视模块", "AFC"): ["AFC切非反馈", "AFC切非", "AFC状态反馈", "AFC释放控制"],
     ("控制模块", "AFC"): ["AFC切非反馈", "AFC切非", "AFC状态反馈", "AFC释放控制"],
     ("监视模块", "EPS"): ["状态反馈", "启动控制"],
     ("控制模块", "EPS"): ["状态反馈", "启动控制"],
     ("监视模块", "垂直电梯"): ["垂直电梯状态反馈", "垂直电梯归首控制"],
     ("控制模块", "垂直电梯"): ["垂直电梯状态反馈", "垂直电梯归首控制"],
-    ("监视模块", "防火卷帘"): ["防火卷帘一次降落反馈", "防火卷帘一次降落控制", "防火卷帘二次降落反馈", "防火卷帘二次降落控制"],
-    ("控制模块", "防火卷帘"): ["防火卷帘一次降落反馈", "防火卷帘一次降落控制", "防火卷帘二次降落反馈", "防火卷帘二次降落控制"],
+    ("监视模块", "防火卷帘"): [
+        "防火卷帘一次降落反馈",
+        "防火卷帘一次降落控制",
+        "防火卷帘二次降落反馈",
+        "防火卷帘二次降落控制",
+    ],
+    ("控制模块", "防火卷帘"): [
+        "防火卷帘一次降落反馈",
+        "防火卷帘一次降落控制",
+        "防火卷帘二次降落反馈",
+        "防火卷帘二次降落控制",
+    ],
     ("监视模块", "400V切非"): ["切非反馈"],
     ("控制模块", "400V切非"): ["切非"],
-    ("监视模块", "消防泵"): ["消防泵手/自动反馈", "消防泵动作反馈", "消防泵故障反馈", "压力开关动作反馈", "流量开关动作反馈", "高水位报警反馈", "低水位报警反馈", "最低水位报警反馈", "稳压泵动作反馈", "稳压泵故障反馈", "消防泵启动控制", "巡检柜报警反馈", "信号阀动作反馈", "水流指示器动作反馈"],
-    ("控制模块", "消防泵"): ["消防泵手/自动反馈", "消防泵动作反馈", "消防泵故障反馈", "压力开关动作反馈", "流量开关动作反馈", "高水位报警反馈", "低水位报警反馈", "最低水位报警反馈", "稳压泵动作反馈", "稳压泵故障反馈", "消防泵启动控制", "巡检柜报警反馈", "信号阀动作反馈", "水流指示器动作反馈"],
+    ("监视模块", "消防泵"): [
+        "消防泵手/自动反馈",
+        "消防泵动作反馈",
+        "消防泵故障反馈",
+        "压力开关动作反馈",
+        "流量开关动作反馈",
+        "高水位报警反馈",
+        "低水位报警反馈",
+        "最低水位报警反馈",
+        "稳压泵动作反馈",
+        "稳压泵故障反馈",
+        "消防泵启动控制",
+        "巡检柜报警反馈",
+        "信号阀动作反馈",
+        "水流指示器动作反馈",
+    ],
+    ("控制模块", "消防泵"): [
+        "消防泵手/自动反馈",
+        "消防泵动作反馈",
+        "消防泵故障反馈",
+        "压力开关动作反馈",
+        "流量开关动作反馈",
+        "高水位报警反馈",
+        "低水位报警反馈",
+        "最低水位报警反馈",
+        "稳压泵动作反馈",
+        "稳压泵故障反馈",
+        "消防泵启动控制",
+        "巡检柜报警反馈",
+        "信号阀动作反馈",
+        "水流指示器动作反馈",
+    ],
     ("监视模块", "门禁"): ["门禁释放反馈", "门禁释放"],
     ("控制模块", "门禁"): ["门禁释放反馈", "门禁释放"],
-    ("监视模块", "电气火灾、消防电源、应急疏散"): ["电气火灾监控报警", "电气火灾监控故障反馈", "消防电源监控系统报警", "消防电源监控系统故障反馈", "应急照明及疏散指示系统状态反馈", "应急照明及疏散指示系统模式控制"],
-    ("控制模块", "电气火灾、消防电源、应急疏散"): ["电气火灾监控报警", "电气火灾监控故障反馈", "消防电源监控系统报警", "消防电源监控系统故障反馈", "应急照明及疏散指示系统状态反馈", "应急照明及疏散指示系统模式控制"],
-    ("控制模块", "主机手自动、人工确认"): ["FAS主机人工确定按钮", "FAS主机自动状态按钮", "气灭主机自动状态按钮", "FAS主机综合火警"],
+    ("监视模块", "电气火灾、消防电源、应急疏散"): [
+        "电气火灾监控报警",
+        "电气火灾监控故障反馈",
+        "消防电源监控系统报警",
+        "消防电源监控系统故障反馈",
+        "应急照明及疏散指示系统状态反馈",
+        "应急照明及疏散指示系统模式控制",
+    ],
+    ("控制模块", "电气火灾、消防电源、应急疏散"): [
+        "电气火灾监控报警",
+        "电气火灾监控故障反馈",
+        "消防电源监控系统报警",
+        "消防电源监控系统故障反馈",
+        "应急照明及疏散指示系统状态反馈",
+        "应急照明及疏散指示系统模式控制",
+    ],
+    ("控制模块", "主机手自动、人工确认"): [
+        "FAS主机人工确定按钮",
+        "FAS主机自动状态按钮",
+        "气灭主机自动状态按钮",
+        "FAS主机综合火警",
+    ],
 }
 
 _SCHEMA_V1_STATEMENTS = (
@@ -140,22 +203,10 @@ _SCHEMA_V1_STATEMENTS = (
         UNIQUE (result_output_id, sort_order)
     )
     """,
-    (
-        "CREATE INDEX IF NOT EXISTS ix_test_contents_equipment_type "
-        "ON test_contents(equipment_type_id)"
-    ),
-    (
-        "CREATE INDEX IF NOT EXISTS ix_operation_steps_test_content "
-        "ON operation_steps(test_content_id)"
-    ),
-    (
-        "CREATE INDEX IF NOT EXISTS ix_result_outputs_operation_step "
-        "ON result_outputs(operation_step_id)"
-    ),
-    (
-        "CREATE INDEX IF NOT EXISTS ix_result_output_disciplines_discipline "
-        "ON result_output_disciplines(discipline_id)"
-    ),
+    ("CREATE INDEX IF NOT EXISTS ix_test_contents_equipment_type ON test_contents(equipment_type_id)"),
+    ("CREATE INDEX IF NOT EXISTS ix_operation_steps_test_content ON operation_steps(test_content_id)"),
+    ("CREATE INDEX IF NOT EXISTS ix_result_outputs_operation_step ON result_outputs(operation_step_id)"),
+    ("CREATE INDEX IF NOT EXISTS ix_result_output_disciplines_discipline ON result_output_disciplines(discipline_id)"),
 )
 
 _SCHEMA_V2_STATEMENTS = (
@@ -230,10 +281,7 @@ _SCHEMA_V2_STATEMENTS = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_generation_runs_generated_at ON generation_runs(generated_at)",
-    (
-        "CREATE INDEX IF NOT EXISTS ix_generation_test_contents_generation "
-        "ON generation_test_contents(generation_id)"
-    ),
+    ("CREATE INDEX IF NOT EXISTS ix_generation_test_contents_generation ON generation_test_contents(generation_id)"),
     (
         "CREATE INDEX IF NOT EXISTS ix_generation_steps_content "
         "ON generation_operation_steps(generation_test_content_id)"
@@ -244,9 +292,7 @@ _SCHEMA_V2_STATEMENTS = (
     ),
 )
 
-_SCHEMA_V3_STATEMENTS = (
-    "ALTER TABLE test_contents ADD COLUMN equipment_subtype TEXT NOT NULL DEFAULT ''",
-)
+_SCHEMA_V3_STATEMENTS = ("ALTER TABLE test_contents ADD COLUMN equipment_subtype TEXT NOT NULL DEFAULT ''",)
 
 _SCHEMA_V4_STATEMENTS = (
     "ALTER TABLE test_contents ADD COLUMN equipment_status TEXT NOT NULL DEFAULT ''",
@@ -272,12 +318,11 @@ _SCHEMA_V4_STATEMENTS = (
         UNIQUE (equipment_subtype_id, name)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS ix_test_contents_selector ON test_contents(equipment_type_id, equipment_subtype, equipment_status)",
+    "CREATE INDEX IF NOT EXISTS ix_test_contents_selector "
+    "ON test_contents(equipment_type_id, equipment_subtype, equipment_status)",
 )
 
-_SCHEMA_V5_STATEMENTS = (
-    "ALTER TABLE generation_runs ADD COLUMN output_blob BLOB",
-)
+_SCHEMA_V5_STATEMENTS = ("ALTER TABLE generation_runs ADD COLUMN output_blob BLOB",)
 
 _SCHEMA_V6_STATEMENTS = (
     "ALTER TABLE generation_runs ADD COLUMN integration_code TEXT NOT NULL DEFAULT 'T19'",
@@ -340,9 +385,7 @@ def _seed_builtin_statuses(connection: sqlite3.Connection) -> None:
         "equipment_subtype_statuses",
     }:
         return
-    seeded = connection.execute(
-        "SELECT 1 FROM builtin_catalog_seed_markers WHERE name = 'statuses-v1'"
-    ).fetchone()
+    seeded = connection.execute("SELECT 1 FROM builtin_catalog_seed_markers WHERE name = 'statuses-v1'").fetchone()
     if seeded is not None:
         return
     for parent_name, status_names in _BUILTIN_PARENT_STATUSES.items():
@@ -384,9 +427,7 @@ def _seed_builtin_statuses(connection: sqlite3.Connection) -> None:
                 """,
                 (int(subtype["id"]), status_name, sort_order),
             )
-    connection.execute(
-        "INSERT OR IGNORE INTO builtin_catalog_seed_markers(name) VALUES ('statuses-v1')"
-    )
+    connection.execute("INSERT OR IGNORE INTO builtin_catalog_seed_markers(name) VALUES ('statuses-v1')")
 
 
 def _migrate_manual_fire_damper_status_rules(connection: sqlite3.Connection) -> None:
@@ -408,18 +449,14 @@ def _migrate_manual_fire_damper_status_rules(connection: sqlite3.Connection) -> 
         "result_output_disciplines",
     }
     tables = {
-        str(row[0])
-        for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
+        str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     }
     if not required.issubset(tables):
         return
 
     marker = "manual-fire-damper-status-rules-v1"
     parent = connection.execute(
-        "SELECT id FROM equipment_types WHERE name = '防火阀' COLLATE NOCASE "
-        "AND integration_code = 'T19' LIMIT 1"
+        "SELECT id FROM equipment_types WHERE name = '防火阀' COLLATE NOCASE AND integration_code = 'T19' LIMIT 1"
     ).fetchone()
     if parent is None:
         return
@@ -579,10 +616,7 @@ def _migrate_manual_fire_damper_status_rules(connection: sqlite3.Connection) -> 
 def _migrate_asd_remote_reset_to_control(connection: sqlite3.Connection) -> None:
     """Keep ASD monitoring states under monitoring and remote reset under control."""
     tables = {
-        str(row[0])
-        for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
+        str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
     }
     required_tables = {
         "builtin_catalog_seed_markers",
@@ -594,9 +628,7 @@ def _migrate_asd_remote_reset_to_control(connection: sqlite3.Connection) -> None
     if not required_tables.issubset(tables):
         return
     marker = "asd-module-split-v1"
-    if connection.execute(
-        "SELECT 1 FROM builtin_catalog_seed_markers WHERE name = ?", (marker,)
-    ).fetchone():
+    if connection.execute("SELECT 1 FROM builtin_catalog_seed_markers WHERE name = ?", (marker,)).fetchone():
         return
 
     type_ids = {
@@ -688,6 +720,7 @@ def _migrate_asd_remote_reset_to_control(connection: sqlite3.Connection) -> None
         (marker,),
     )
 
+
 # Kept as a separate idempotent statement so existing v2 databases gain the
 # hierarchy table without changing the public schema version or legacy tables.
 _SCHEMA_HIERARCHY_STATEMENTS = (
@@ -720,7 +753,8 @@ _SCHEMA_HIERARCHY_STATEMENTS = (
         UNIQUE (test_content_id, equipment_type, equipment_subtype)
     )
     """,
-    "CREATE INDEX IF NOT EXISTS ix_test_content_selectors_lookup ON test_content_selectors(equipment_type, equipment_subtype)",
+    "CREATE INDEX IF NOT EXISTS ix_test_content_selectors_lookup "
+    "ON test_content_selectors(equipment_type, equipment_subtype)",
     """
     CREATE TABLE IF NOT EXISTS builtin_catalog_seed_markers (
         name TEXT PRIMARY KEY,
@@ -775,21 +809,16 @@ class CatalogRepository:
                 )
                 """
             )
-            row = connection.execute(
-                "SELECT MAX(version) AS version FROM schema_migrations"
-            ).fetchone()
+            row = connection.execute("SELECT MAX(version) AS version FROM schema_migrations").fetchone()
             current_version = int(row["version"] or 0)
             if current_version > SCHEMA_VERSION:
                 raise RuntimeError(
-                    f"Database schema version {current_version} is newer than supported "
-                    f"version {SCHEMA_VERSION}"
+                    f"Database schema version {current_version} is newer than supported version {SCHEMA_VERSION}"
                 )
             if current_version < 1:
                 for statement in _SCHEMA_V1_STATEMENTS:
                     connection.execute(statement)
-                connection.execute(
-                    "INSERT INTO schema_migrations(version) VALUES (1)"
-                )
+                connection.execute("INSERT INTO schema_migrations(version) VALUES (1)")
                 current_version = 1
             if current_version < 2:
                 for statement in _SCHEMA_V2_STATEMENTS:
@@ -835,10 +864,7 @@ class CatalogRepository:
                 ).fetchone()
                 if table_exists:
                     test_content_columns = {
-                        row[1]
-                        for row in connection.execute(
-                            "PRAGMA table_info(test_contents)"
-                        ).fetchall()
+                        row[1] for row in connection.execute("PRAGMA table_info(test_contents)").fetchall()
                     }
                     if "equipment_status" not in test_content_columns:
                         connection.execute(_SCHEMA_V4_STATEMENTS[0])
@@ -854,10 +880,7 @@ class CatalogRepository:
                 ).fetchone()
                 if table_exists:
                     generation_columns = {
-                        row[1]
-                        for row in connection.execute(
-                            "PRAGMA table_info(generation_runs)"
-                        ).fetchall()
+                        row[1] for row in connection.execute("PRAGMA table_info(generation_runs)").fetchall()
                     }
                     if "output_blob" not in generation_columns:
                         connection.execute(_SCHEMA_V5_STATEMENTS[0])
@@ -869,10 +892,7 @@ class CatalogRepository:
                 ).fetchone()
                 if table_exists:
                     generation_columns = {
-                        row[1]
-                        for row in connection.execute(
-                            "PRAGMA table_info(generation_runs)"
-                        ).fetchall()
+                        row[1] for row in connection.execute("PRAGMA table_info(generation_runs)").fetchall()
                     }
                     if "integration_code" not in generation_columns:
                         connection.execute(_SCHEMA_V6_STATEMENTS[0])
@@ -887,9 +907,7 @@ class CatalogRepository:
             if current_version < 8:
                 existing_tables = {
                     str(row[0])
-                    for row in connection.execute(
-                        "SELECT name FROM sqlite_master WHERE type = 'table'"
-                    ).fetchall()
+                    for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
                 }
                 for statement in _SCHEMA_V8_STATEMENTS:
                     target_table = next(
@@ -901,8 +919,7 @@ class CatalogRepository:
                                 "disciplines",
                                 "stations",
                             )
-                            if f"ALTER TABLE {table} " in statement
-                            or f" ON {table}(" in statement
+                            if f"ALTER TABLE {table} " in statement or f" ON {table}(" in statement
                         ),
                         None,
                     )
@@ -914,9 +931,7 @@ class CatalogRepository:
             if current_version < 9:
                 existing_tables = {
                     str(row[0])
-                    for row in connection.execute(
-                        "SELECT name FROM sqlite_master WHERE type = 'table'"
-                    ).fetchall()
+                    for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
                 }
                 required_tables = {
                     "equipment_types",
@@ -971,24 +986,23 @@ class CatalogRepository:
                             (parent_id,),
                         ).fetchone()
                         if subtype is None:
-                            next_order = int(connection.execute(
-                                "SELECT COALESCE(MAX(sort_order), 0) + 1 "
-                                "FROM equipment_type_subtypes WHERE parent_equipment_type_id = ?",
-                                (parent_id,),
-                            ).fetchone()[0])
+                            next_order = int(
+                                connection.execute(
+                                    "SELECT COALESCE(MAX(sort_order), 0) + 1 "
+                                    "FROM equipment_type_subtypes WHERE parent_equipment_type_id = ?",
+                                    (parent_id,),
+                                ).fetchone()[0]
+                            )
                             connection.execute(
-                                "INSERT INTO equipment_type_subtypes(parent_equipment_type_id, code, name, sort_order, is_enabled) "
+                                "INSERT INTO equipment_type_subtypes("
+                                "parent_equipment_type_id, code, name, sort_order, is_enabled) "
                                 "VALUES (?, ?, '门禁', ?, 1)",
                                 (parent_id, f"{parent_id}_DOOR_ACCESS", next_order),
                             )
-                            subtype_id = int(connection.execute(
-                                "SELECT last_insert_rowid()"
-                            ).fetchone()[0])
+                            subtype_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
                         else:
                             subtype_id = int(subtype["id"])
-                        for sort_order, status_name in enumerate(
-                            ("门禁释放反馈", "门禁释放"), start=1
-                        ):
+                        for sort_order, status_name in enumerate(("门禁释放反馈", "门禁释放"), start=1):
                             connection.execute(
                                 "INSERT OR IGNORE INTO equipment_subtype_statuses("
                                 "equipment_subtype_id, name, sort_order, is_enabled) "
@@ -998,10 +1012,7 @@ class CatalogRepository:
                 connection.execute("INSERT INTO schema_migrations(version) VALUES (9)")
                 current_version = 9
             if current_version < 10:
-                station_columns = {
-                    str(row[1])
-                    for row in connection.execute("PRAGMA table_info(stations)").fetchall()
-                }
+                station_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(stations)").fetchall()}
                 if "line_id" not in station_columns:
                     line_table_exists = connection.execute(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace_lines'"
@@ -1015,12 +1026,8 @@ class CatalogRepository:
                     )
                     default_line_id = int(line_row[0]) if line_row else 1
                     connection.execute("ALTER TABLE stations RENAME TO stations_before_line_scope")
-                    connection.execute(
-                        "DROP INDEX IF EXISTS ix_stations_sort_order"
-                    )
-                    connection.execute(
-                        "DROP INDEX IF EXISTS ix_stations_integration_code"
-                    )
+                    connection.execute("DROP INDEX IF EXISTS ix_stations_sort_order")
+                    connection.execute("DROP INDEX IF EXISTS ix_stations_integration_code")
                     connection.execute(
                         """
                         CREATE TABLE stations (
@@ -1052,19 +1059,14 @@ class CatalogRepository:
                         (default_line_id,),
                     )
                     connection.execute("DROP TABLE stations_before_line_scope")
-                    connection.execute(
-                        "CREATE INDEX ix_stations_sort_order ON stations(line_id, sort_order, id)"
-                    )
+                    connection.execute("CREATE INDEX ix_stations_sort_order ON stations(line_id, sort_order, id)")
                     connection.execute(
                         "CREATE INDEX ix_stations_integration_code ON stations(integration_code, line_id)"
                     )
                 connection.execute("INSERT INTO schema_migrations(version) VALUES (10)")
                 current_version = 10
             selector_columns = {
-                row[1]
-                for row in connection.execute(
-                    "PRAGMA table_info(test_content_selectors)"
-                ).fetchall()
+                row[1] for row in connection.execute("PRAGMA table_info(test_content_selectors)").fetchall()
             }
             if selector_columns and "equipment_type" not in selector_columns:
                 connection.execute(
@@ -1095,11 +1097,10 @@ class CatalogRepository:
                     """
                 )
                 connection.execute("DROP TABLE test_content_selectors")
+                connection.execute("ALTER TABLE test_content_selectors_without_status RENAME TO test_content_selectors")
                 connection.execute(
-                    "ALTER TABLE test_content_selectors_without_status RENAME TO test_content_selectors"
-                )
-                connection.execute(
-                    "CREATE INDEX IF NOT EXISTS ix_test_content_selectors_lookup ON test_content_selectors(equipment_type, equipment_subtype)"
+                    "CREATE INDEX IF NOT EXISTS ix_test_content_selectors_lookup "
+                    "ON test_content_selectors(equipment_type, equipment_subtype)"
                 )
             _seed_builtin_statuses(connection)
             _migrate_asd_remote_reset_to_control(connection)
@@ -1221,9 +1222,7 @@ class CatalogRepository:
                     (subtype_id,),
                 ).fetchall()
             ]
-            removed = {name.casefold() for name in existing} - {
-                name.casefold() for name in statuses
-            }
+            removed = {name.casefold() for name in existing} - {name.casefold() for name in statuses}
             if removed:
                 used = connection.execute(
                     """
@@ -1267,9 +1266,7 @@ class CatalogRepository:
                 return item
         raise RuntimeError("Updated equipment subtype disappeared")
 
-    def list_equipment_hierarchy(
-        self, *, include_disabled: bool = False
-    ) -> list[EquipmentHierarchyItem]:
+    def list_equipment_hierarchy(self, *, include_disabled: bool = False) -> list[EquipmentHierarchyItem]:
         """Return equipment types with their explicitly configured subtypes."""
         types = self.list_equipment_types(include_disabled=include_disabled)
         # Workbook imports from older versions may have stored subtype names as
@@ -1284,9 +1281,7 @@ class CatalogRepository:
             subtype_names = {str(row["name"]) for row in rows}
         result: list[EquipmentHierarchyItem] = []
         for item in types:
-            subtypes = self.list_equipment_subtypes(
-                item["id"], include_disabled=include_disabled
-            )
+            subtypes = self.list_equipment_subtypes(item["id"], include_disabled=include_disabled)
             if item["name"] in subtype_names and not subtypes:
                 continue
             result.append(
@@ -1302,7 +1297,8 @@ class CatalogRepository:
         where_enabled = "" if include_disabled else "AND is_enabled = 1"
         with closing(self._connect()) as connection, connection:
             rows = connection.execute(
-                f"SELECT name FROM equipment_type_statuses WHERE equipment_type_id = ? {where_enabled} ORDER BY sort_order, id",
+                f"SELECT name FROM equipment_type_statuses WHERE equipment_type_id = ? "
+                f"{where_enabled} ORDER BY sort_order, id",
                 (equipment_type_id,),
             ).fetchall()
         return [str(row["name"]) for row in rows]
@@ -1331,9 +1327,7 @@ class CatalogRepository:
             for row in rows
         ]
 
-    def list_stations(
-        self, line_id: int, *, include_disabled: bool = False
-    ) -> list[StationListItem]:
+    def list_stations(self, line_id: int, *, include_disabled: bool = False) -> list[StationListItem]:
         self.ensure_schema()
         where_clause = "WHERE line_id = ?" + ("" if include_disabled else " AND is_enabled = 1")
         with closing(self._connect()) as connection, connection:
@@ -1361,9 +1355,7 @@ class CatalogRepository:
     def create_station(self, line_id: int, payload: StationWriteRequest) -> StationListItem:
         return self._save_station(None, line_id, payload)
 
-    def update_station(
-        self, station_id: int, line_id: int, payload: StationWriteRequest
-    ) -> StationListItem:
+    def update_station(self, station_id: int, line_id: int, payload: StationWriteRequest) -> StationListItem:
         return self._save_station(station_id, line_id, payload)
 
     def delete_station(self, station_id: int, line_id: int) -> None:
@@ -1382,14 +1374,10 @@ class CatalogRepository:
                 )
             connection.execute("DELETE FROM stations WHERE id = ?", (station_id,))
 
-    def create_equipment_type(
-        self, payload: EquipmentTypeWriteRequest
-    ) -> EquipmentTypeItem:
+    def create_equipment_type(self, payload: EquipmentTypeWriteRequest) -> EquipmentTypeItem:
         return self._save_equipment_type(None, payload)
 
-    def update_equipment_type(
-        self, equipment_type_id: int, payload: EquipmentTypeWriteRequest
-    ) -> EquipmentTypeItem:
+    def update_equipment_type(self, equipment_type_id: int, payload: EquipmentTypeWriteRequest) -> EquipmentTypeItem:
         return self._save_equipment_type(equipment_type_id, payload)
 
     def delete_equipment_type(self, equipment_type_id: int) -> None:
@@ -1437,9 +1425,7 @@ class CatalogRepository:
     def create_discipline(self, payload: DisciplineWriteRequest) -> DisciplineListItem:
         return self._save_discipline(None, payload)
 
-    def update_discipline(
-        self, discipline_id: int, payload: DisciplineWriteRequest
-    ) -> DisciplineListItem:
+    def update_discipline(self, discipline_id: int, payload: DisciplineWriteRequest) -> DisciplineListItem:
         return self._save_discipline(discipline_id, payload)
 
     def delete_discipline(self, discipline_id: int) -> None:
@@ -1480,9 +1466,7 @@ class CatalogRepository:
     def create_test_content(self, payload: TestContentWriteRequest) -> TestContentItem:
         return self._save_test_content(None, payload)
 
-    def update_test_content(
-        self, content_id: int, payload: TestContentWriteRequest
-    ) -> TestContentItem:
+    def update_test_content(self, content_id: int, payload: TestContentWriteRequest) -> TestContentItem:
         return self._save_test_content(content_id, payload)
 
     def delete_test_content(self, content_id: int) -> None:
@@ -1739,9 +1723,7 @@ class CatalogRepository:
                     )
                     target_id = equipment_type_id
                 else:
-                    equipment_code = payload.code or self._generate_code(
-                        connection, "equipment_types", "TYPE"
-                    )
+                    equipment_code = payload.code or self._generate_code(connection, "equipment_types", "TYPE")
                     cursor = connection.execute(
                         """
                         INSERT INTO equipment_types(
@@ -1766,9 +1748,7 @@ class CatalogRepository:
         return self._get_equipment_type_or_raise(target_id)
 
     @staticmethod
-    def _generate_code(
-        connection: sqlite3.Connection, table_name: str, prefix: str
-    ) -> str:
+    def _generate_code(connection: sqlite3.Connection, table_name: str, prefix: str) -> str:
         while True:
             code = f"{prefix}_{uuid4().hex[:12].upper()}"
             exists = connection.execute(
@@ -1797,16 +1777,12 @@ class CatalogRepository:
             existing_id = int(existing["id"])
             if existing_id in incoming_ids:
                 continue
-            self._delete_equipment_subtype_in_transaction(
-                connection, existing_id, parent_id
-            )
+            self._delete_equipment_subtype_in_transaction(connection, existing_id, parent_id)
 
         for subtype in subtypes:
             subtype_id = getattr(subtype, "id", None)
             if subtype_id is None:
-                subtype_code = self._generate_code(
-                    connection, "equipment_type_subtypes", f"{parent['code']}_SUBTYPE"
-                )
+                subtype_code = self._generate_code(connection, "equipment_type_subtypes", f"{parent['code']}_SUBTYPE")
                 cursor = connection.execute(
                     """
                     INSERT INTO equipment_type_subtypes(
@@ -1875,9 +1851,7 @@ class CatalogRepository:
                     ),
                 )
 
-            self._replace_subtype_statuses(
-                connection, int(subtype_id), list(subtype.statuses)
-            )
+            self._replace_subtype_statuses(connection, int(subtype_id), list(subtype.statuses))
 
     def _replace_subtype_statuses(
         self,
@@ -1892,9 +1866,7 @@ class CatalogRepository:
                 (subtype_id,),
             ).fetchall()
         ]
-        removed = {name.casefold() for name in existing} - {
-            name.casefold() for name in statuses
-        }
+        removed = {name.casefold() for name in existing} - {name.casefold() for name in statuses}
         if removed:
             subtype = connection.execute(
                 "SELECT parent_equipment_type_id, name FROM equipment_type_subtypes WHERE id = ?",
@@ -1948,9 +1920,7 @@ class CatalogRepository:
             """,
             (subtype_id,),
         ).fetchone()
-        if subtype is None or (
-            parent_id is not None and int(subtype["parent_equipment_type_id"]) != parent_id
-        ):
+        if subtype is None or (parent_id is not None and int(subtype["parent_equipment_type_id"]) != parent_id):
             raise BusinessError(
                 "设备子类型不存在",
                 "CATALOG_EQUIPMENT_SUBTYPE_NOT_FOUND",
@@ -2010,9 +1980,7 @@ class CatalogRepository:
                     )
                     target_id = discipline_id
                 else:
-                    discipline_code = payload.code or self._generate_code(
-                        connection, "disciplines", "DISC"
-                    )
+                    discipline_code = payload.code or self._generate_code(connection, "disciplines", "DISC")
                     cursor = connection.execute(
                         """
                         INSERT INTO disciplines(
@@ -2034,9 +2002,7 @@ class CatalogRepository:
             raise self._integrity_error(error) from error
         return self._get_discipline_or_raise(target_id)
 
-    def _save_station(
-        self, station_id: int | None, line_id: int, payload: StationWriteRequest
-    ) -> StationListItem:
+    def _save_station(self, station_id: int | None, line_id: int, payload: StationWriteRequest) -> StationListItem:
         self.ensure_schema()
         try:
             with closing(self._connect()) as connection, connection:
@@ -2072,9 +2038,7 @@ class CatalogRepository:
                     )
                     target_id = station_id
                 else:
-                    station_code = payload.code or self._generate_code(
-                        connection, "stations", "STATION"
-                    )
+                    station_code = payload.code or self._generate_code(connection, "stations", "STATION")
                     cursor = connection.execute(
                         """
                         INSERT INTO stations(
@@ -2134,9 +2098,7 @@ class CatalogRepository:
                     )
                     target_id = content_id
                 else:
-                    content_code = payload.code or self._generate_code(
-                        connection, "test_contents", "RULE"
-                    )
+                    content_code = payload.code or self._generate_code(connection, "test_contents", "RULE")
                     cursor = connection.execute(
                         """
                         INSERT INTO test_contents(
@@ -2208,9 +2170,7 @@ class CatalogRepository:
             raise self._integrity_error(error) from error
         return self._get_test_content_or_raise(target_id)
 
-    def _delete_test_content_tree(
-        self, connection: sqlite3.Connection, content_id: int
-    ) -> None:
+    def _delete_test_content_tree(self, connection: sqlite3.Connection, content_id: int) -> None:
         step_ids = [
             int(row["id"])
             for row in connection.execute(
@@ -2253,12 +2213,9 @@ class CatalogRepository:
             step_ids,
         )
 
-    def _require_equipment_type(
-        self, connection: sqlite3.Connection, equipment_type_id: int
-    ) -> sqlite3.Row:
+    def _require_equipment_type(self, connection: sqlite3.Connection, equipment_type_id: int) -> sqlite3.Row:
         row = connection.execute(
-            "SELECT id, code, name, description, sort_order, is_enabled "
-            "FROM equipment_types WHERE id = ?",
+            "SELECT id, code, name, description, sort_order, is_enabled FROM equipment_types WHERE id = ?",
             (equipment_type_id,),
         ).fetchone()
         if row is None:
@@ -2270,12 +2227,9 @@ class CatalogRepository:
             )
         return row
 
-    def _require_discipline(
-        self, connection: sqlite3.Connection, discipline_id: int
-    ) -> sqlite3.Row:
+    def _require_discipline(self, connection: sqlite3.Connection, discipline_id: int) -> sqlite3.Row:
         row = connection.execute(
-            "SELECT id, code, name, description, sort_order, is_enabled "
-            "FROM disciplines WHERE id = ?",
+            "SELECT id, code, name, description, sort_order, is_enabled FROM disciplines WHERE id = ?",
             (discipline_id,),
         ).fetchone()
         if row is None:
@@ -2287,9 +2241,7 @@ class CatalogRepository:
             )
         return row
 
-    def _require_test_content(
-        self, connection: sqlite3.Connection, content_id: int
-    ) -> sqlite3.Row:
+    def _require_test_content(self, connection: sqlite3.Connection, content_id: int) -> sqlite3.Row:
         row = connection.execute(
             """
             SELECT id, code, equipment_type_id, content, description, revision,
@@ -2438,10 +2390,7 @@ class CatalogRepository:
                 "CATALOG_RESULT_OUTPUT_SORT_CONFLICT",
                 status_code=409,
             )
-        if (
-            "result_output_disciplines.result_output_id, "
-            "result_output_disciplines.sort_order"
-        ) in message:
+        if ("result_output_disciplines.result_output_id, result_output_disciplines.sort_order") in message:
             return BusinessError(
                 "同一结果输出下的责任专业排序不能重复",
                 "CATALOG_DISCIPLINE_SORT_CONFLICT",

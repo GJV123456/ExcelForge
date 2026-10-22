@@ -402,27 +402,6 @@
   font-size: 13px;
 }
 
-.copy-list {
-  display: grid;
-  gap: 10px;
-  max-height: 390px;
-  overflow: auto;
-}
-
-.copy-list .el-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid #e3eaf4;
-  border-radius: 8px;
-}
-
-.copy-list code {
-  color: #4f6f9f;
-}
-
 .steps-heading {
   justify-content: space-between;
   margin: 12px 0;

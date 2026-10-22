@@ -44,4 +44,3 @@ def test_packaged_linux_database_uses_xdg_data_home(monkeypatch, tmp_path: Path)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
 
     assert default_database_path() == tmp_path / "debug-table-auto" / DATABASE_FILENAME
-

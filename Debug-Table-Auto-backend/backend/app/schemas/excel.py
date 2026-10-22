@@ -20,9 +20,7 @@ IntegrationCode = Annotated[
 
 class ResultOutput(ApiModel):
     description: NonEmptyText
-    responsible_disciplines: list[NonEmptyText] = Field(
-        alias="responsibleDisciplines", min_length=1
-    )
+    responsible_disciplines: list[NonEmptyText] = Field(alias="responsibleDisciplines", min_length=1)
 
 
 class OperationStep(ApiModel):
@@ -42,11 +40,9 @@ class FormalTestContent(ApiModel):
     equipment_subtype: StrictText = Field(default="", alias="equipmentSubtype", max_length=32_767)
     equipment_status: StrictText = Field(default="", alias="equipmentStatus", max_length=32_767)
     interval_name: StrictText = Field(default="", alias="intervalName", max_length=32_767)
-    integration_config_code: StrictText = Field(
-        default="", alias="integrationConfigCode", max_length=512
-    )
-    operation_steps: Annotated[list[OperationStep], Field(alias="operationSteps", min_length=1)] = (
-        Field(default_factory=list)
+    integration_config_code: StrictText = Field(default="", alias="integrationConfigCode", max_length=512)
+    operation_steps: Annotated[list[OperationStep], Field(alias="operationSteps", min_length=1)] = Field(
+        default_factory=list
     )
 
 

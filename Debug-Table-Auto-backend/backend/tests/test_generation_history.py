@@ -58,20 +58,18 @@ def test_successful_generation_records_nested_row_mappings(tmp_path: Path) -> No
 
     detail = detail_response.json()["data"]
     assert [item["excelRowNumber"] for item in detail["testContents"]] == [3, 4]
-    assert [
-        step["excelRowNumber"]
-        for content in detail["testContents"]
-        for step in content["operationSteps"]
-    ] == [3, 4, 5]
+    assert [step["excelRowNumber"] for content in detail["testContents"] for step in content["operationSteps"]] == [
+        3,
+        4,
+        5,
+    ]
     assert [
         result["excelRowNumber"]
         for content in detail["testContents"]
         for step in content["operationSteps"]
         for result in step["results"]
     ] == list(range(3, 12))
-    assert detail["testContents"][0]["operationSteps"][0]["results"][1][
-        "responsibleDisciplines"
-    ] == [
+    assert detail["testContents"][0]["operationSteps"][0]["results"][1]["responsibleDisciplines"] == [
         {"sequenceIndex": 1, "name": "FAS"},
         {"sequenceIndex": 2, "name": "综合监控"},
     ]
@@ -129,5 +127,3 @@ def test_generation_history_retains_only_the_latest_twenty_runs(tmp_path: Path) 
         assert connection.execute("SELECT COUNT(*) FROM generation_runs").fetchone()[0] == 20
         assert connection.execute("SELECT COUNT(*) FROM generation_test_contents").fetchone()[0] == 40
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
-
-

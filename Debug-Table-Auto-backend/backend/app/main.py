@@ -9,13 +9,13 @@ from fastapi.responses import FileResponse
 
 from app.api.auth import router as auth_router
 from app.api.catalog import router as catalog_router
-from app.api.health import router as health_router
-from app.api.generation import router as generation_router
 from app.api.excel import router as excel_router
+from app.api.generation import router as generation_router
+from app.api.health import router as health_router
 from app.api.workspace import router as workspace_router
 from app.config import Settings
-from app.db.catalog import CatalogRepository
 from app.db.auth import AuthRepository
+from app.db.catalog import CatalogRepository
 from app.db.generation import GenerationRepository
 from app.db.workspace import WorkspaceRepository
 from app.exceptions import register_exception_handlers
@@ -49,12 +49,8 @@ def _register_frontend(application: FastAPI, settings: Settings) -> None:
 def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title="ExcelForge API", version="1.0.0")
     application.state.settings = settings or Settings.from_environment()
-    application.state.catalog_database_path = resolve_database_path(
-        application.state.settings.database_path
-    )
-    application.state.auth_repository = AuthRepository(
-        resolve_database_path(application.state.settings.database_path)
-    )
+    application.state.catalog_database_path = resolve_database_path(application.state.settings.database_path)
+    application.state.auth_repository = AuthRepository(resolve_database_path(application.state.settings.database_path))
     application.state.generation_repository = GenerationRepository(
         resolve_database_path(application.state.settings.database_path)
     )
@@ -65,9 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def catalog_repository_for(integration_code: str = "T19") -> CatalogRepository:
         return CatalogRepository(
-            resolve_catalog_database_path(
-                application.state.settings.database_path, integration_code
-            ),
+            resolve_catalog_database_path(application.state.settings.database_path, integration_code),
             integration_code,
         )
 

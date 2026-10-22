@@ -9,8 +9,10 @@ import {
   updateWorkspaceProfession, createWorkspaceProject, updateWorkspaceProject
 } from '../api/workspace'
 import { getApiErrorMessage } from '../utils/httpError'
+import { useWorkspaceStore } from '../store/workspace'
 
 const activeTab = ref('accounts')
+const workspace = useWorkspaceStore()
 const context = ref({ lines: [], professions: [], projects: [] })
 const users = ref([])
 const loading = ref(false)
@@ -22,9 +24,24 @@ const editingUserId = ref(null)
 const userForm = reactive({ username: '', password: '', displayName: '', role: 'line_admin', lineId: null, professionId: null, isEnabled: true })
 const enabledLines = computed(() => context.value.lines.filter((item) => item.isEnabled))
 const enabledProfessions = computed(() => context.value.professions.filter((item) => item.isEnabled))
+const isSuperAdmin = computed(() => context.value.currentUser?.role === 'super_admin')
+const projectLines = computed(() => isSuperAdmin.value
+  ? context.value.lines
+  : context.value.lines.filter((item) => String(item.id) === String(context.value.currentUser?.lineId)))
+const managedProjects = computed(() => context.value.projects.filter((item) => canEditProject(item)))
+const canEditProject = (item) => isSuperAdmin.value || (String(item.lineId) === String(context.value.currentUser?.lineId) && ['line_admin', 'professional_configurator'].includes(context.value.currentUser?.role))
 const lineForm = reactive({ id: null, code: '', name: '', isEnabled: true })
 const professionForm = reactive({ id: null, code: '', name: '', isEnabled: true })
-const projectForm = reactive({ id: null, professionId: null, code: '', name: '', description: '', engineCode: '', isEnabled: true })
+const projectForm = reactive({ id: null, lineId: null, professionId: null, code: '', name: '', description: '', engineCode: '', isEnabled: true })
+const groupedUsers = computed(() => {
+  const groups = new Map()
+  for (const account of users.value) {
+    const key = `${account.lineName || '全局账号'} / ${account.professionName || (account.role === 'super_admin' ? '超级管理员' : '全专业')}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(account)
+  }
+  return [...groups].map(([label, members]) => ({ label, members }))
+})
 const editingLine = computed(() => lineForm.id != null)
 const editingProfession = computed(() => professionForm.id != null)
 const editingProject = computed(() => projectForm.id != null)
@@ -42,9 +59,10 @@ const errorMessage = async (error, fallback) => {
 const load = async () => {
   loading.value = true
   try {
-    const [workspaceResponse, usersResponse] = await Promise.all([getWorkspaceContext({ includeDisabled: true }), getWorkspaceUsers()])
+    const workspaceResponse = await getWorkspaceContext({ includeDisabled: true })
     context.value = workspaceResponse.data?.data || context.value
-    users.value = usersResponse.data?.data || []
+    if (context.value.currentUser?.role === 'super_admin') users.value = (await getWorkspaceUsers()).data?.data || []
+    else { users.value = []; activeTab.value = 'projects' }
   } catch (error) {
     ElMessage.error(await errorMessage(error, '管理数据加载失败'))
   } finally { loading.value = false }
@@ -108,16 +126,22 @@ const saveProfession = async () => {
   } catch (error) { ElMessage.error(await errorMessage(error, '专业保存失败')) } finally { saving.value = false }
 }
 const saveProject = async () => {
-  if (!projectForm.professionId || !projectForm.code.trim() || !projectForm.name.trim()) return ElMessage.warning('请填写所属专业、项目编码和项目名称')
+  if (!projectForm.lineId || !projectForm.code.trim() || !projectForm.name.trim()) return ElMessage.warning('请填写所属线路、项目编码和项目名称')
   saving.value = true
   try {
     const { id, ...fields } = projectForm
     const payload = { ...fields, sortOrder: 1 }
-    if (id != null) await updateWorkspaceProject(id, payload)
-    else await createWorkspaceProject(payload)
+    let savedProject
+    if (id != null) savedProject = (await updateWorkspaceProject(id, payload)).data?.data
+    else savedProject = (await createWorkspaceProject(payload)).data?.data
     ElMessage.success(id != null ? '联调项目已保存' : '联调项目已新增')
     entityDialogVisible.value = false
     Object.assign(projectForm, { id: null, professionId: null, code: '', name: '', description: '', engineCode: '', isEnabled: true })
+    await workspace.reload()
+    if (savedProject) {
+      workspace.setLine(savedProject.lineId)
+      workspace.setProject(savedProject.id)
+    }
     await load()
   } catch (error) { ElMessage.error(await errorMessage(error, '联调项目保存失败')) } finally { saving.value = false }
 }
@@ -125,12 +149,12 @@ const openCreateEntity = (type) => {
   entityType.value = type
   if (type === 'line') Object.assign(lineForm, { id: null, code: '', name: '', isEnabled: true })
   if (type === 'profession') Object.assign(professionForm, { id: null, code: '', name: '', isEnabled: true })
-  if (type === 'project') Object.assign(projectForm, { id: null, professionId: context.value.professions.find((item) => item.isEnabled)?.id ?? null, code: '', name: '', description: '', engineCode: '', isEnabled: true })
+  if (type === 'project') Object.assign(projectForm, { id: null, lineId: context.value.lines.find((item) => String(item.id) === String(context.value.currentUser?.lineId))?.id ?? workspace.selectedLineId ?? context.value.lines.find((item) => item.isEnabled)?.id ?? null, professionId: context.value.professions.find((item) => String(item.id) === String(context.value.currentUser?.professionId))?.id ?? workspace.selectedProfessionId ?? context.value.professions.find((item) => item.isEnabled)?.id ?? null, code: '', name: '', description: '', engineCode: '', isEnabled: true })
   entityDialogVisible.value = true
 }
 const editLine = (item) => { entityType.value = 'line'; Object.assign(lineForm, { id: item.id, code: item.code, name: item.name, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
 const editProfession = (item) => { entityType.value = 'profession'; Object.assign(professionForm, { id: item.id, code: item.code, name: item.name, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
-const editProject = (item) => { entityType.value = 'project'; Object.assign(projectForm, { id: item.id, professionId: item.professionId, code: item.code, name: item.name, description: item.description, engineCode: item.engineCode, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
+const editProject = (item) => { entityType.value = 'project'; Object.assign(projectForm, { id: item.id, lineId: item.lineId, professionId: item.professionId, code: item.code, name: item.name, description: item.description, engineCode: item.engineCode, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
 onMounted(load)
 </script>
 
@@ -141,24 +165,24 @@ onMounted(load)
       <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
     </header>
     <el-tabs v-model="activeTab" class="admin-tabs">
-      <el-tab-pane label="账号管理" name="accounts">
+      <el-tab-pane v-if="isSuperAdmin" label="账号管理" name="accounts">
         <el-alert class="admin-notice" type="info" :closable="false" show-icon title="账号按照角色绑定线路和专业，配置权限由工作范围自动控制。" />
         <el-card class="section-card admin-card">
           <template #header><div class="table-header"><strong>账号列表</strong><el-button type="primary" :icon="Plus" @click="openCreateUser">新增账号</el-button></div></template>
-          <el-table v-loading="loading" :data="users" stripe empty-text="暂无账号"><el-table-column prop="username" label="用户名" min-width="150" /><el-table-column prop="displayName" label="显示名称" min-width="140" /><el-table-column label="角色" min-width="150"><template #default="{ row }">{{ { super_admin: '超级管理员', line_admin: '线路管理员', professional_configurator: '专业配置员' }[row.role] || row.role }}</template></el-table-column><el-table-column prop="lineName" label="线路" min-width="120" /><el-table-column prop="professionName" label="专业" min-width="120" /><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'">{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="90" fixed="right"><template #default="{ row }"><el-button text type="primary" :icon="EditPen" @click="editUser(row)">编辑</el-button></template></el-table-column></el-table>
+          <el-collapse v-loading="loading" accordion class="account-groups"><el-collapse-item v-for="group in groupedUsers" :key="group.label" :title="`${group.label}（${group.members.length}）`" :name="group.label"><el-table :data="group.members" stripe><el-table-column prop="username" label="用户名" min-width="150" /><el-table-column prop="displayName" label="显示名称" min-width="140" /><el-table-column label="角色" min-width="150"><template #default="{ row }">{{ { super_admin: '超级管理员', line_admin: '线路管理员', professional_configurator: '专业配置员' }[row.role] || row.role }}</template></el-table-column><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'">{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="90" fixed="right" align="center"><template #default="{ row }"><el-button text type="primary" :icon="EditPen" @click="editUser(row)">编辑</el-button></template></el-table-column></el-table></el-collapse-item><el-empty v-if="!groupedUsers.length" description="暂无账号" /></el-collapse>
         </el-card>
       </el-tab-pane>
-      <el-tab-pane label="线路管理" name="lines">
+      <el-tab-pane v-if="isSuperAdmin" label="线路管理" name="lines">
         <el-alert class="admin-notice" type="info" :closable="false" show-icon title="线路是配置数据的第一层范围；不同线路之间的数据相互隔离。" />
-        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>线路列表</strong><span class="table-hint">共 {{ context.lines.length }} 条线路</span></div><el-button type="primary" :icon="Plus" @click="openCreateEntity('line')">新增线路</el-button></div></template><el-table v-loading="loading" :data="context.lines" stripe empty-text="暂无线路"><el-table-column prop="name" label="线路名称" min-width="180" /><el-table-column prop="code" label="线路编码" min-width="120" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="100" fixed="right"><template #default="{ row }"><el-button text type="primary" :icon="EditPen" @click="editLine(row)">编辑</el-button></template></el-table-column></el-table></el-card>
+        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>线路列表</strong><span class="table-hint">共 {{ context.lines.length }} 条线路</span></div><el-button type="primary" :icon="Plus" @click="openCreateEntity('line')">新增线路</el-button></div></template><el-table v-loading="loading" :data="context.lines" stripe empty-text="暂无线路"><el-table-column prop="name" label="线路名称" min-width="180" /><el-table-column prop="code" label="线路编码" min-width="120" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="100" fixed="right" align="center"><template #default="{ row }"><el-button text type="primary" :icon="EditPen" @click="editLine(row)">编辑</el-button></template></el-table-column></el-table></el-card>
       </el-tab-pane>
       <el-tab-pane label="专业管理" name="professions">
         <el-alert class="admin-notice" type="info" :closable="false" show-icon title="专业是配置数据的第二层范围；专业目录可在同一线路下共享使用。" />
-        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>专业列表</strong><span class="table-hint">共 {{ context.professions.length }} 个专业</span></div><el-button type="primary" :icon="Plus" @click="openCreateEntity('profession')">新增专业</el-button></div></template><el-table v-loading="loading" :data="context.professions" stripe empty-text="暂无专业"><el-table-column prop="name" label="专业名称" min-width="180" /><el-table-column prop="code" label="专业编码" min-width="120" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="100" fixed="right"><template #default="{ row }"><el-button text type="primary" :icon="EditPen" @click="editProfession(row)">编辑</el-button></template></el-table-column></el-table></el-card>
+        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>专业列表</strong><span class="table-hint">共 {{ context.professions.length }} 个专业</span></div><el-button v-if="isSuperAdmin" type="primary" :icon="Plus" @click="openCreateEntity('profession')">新增专业</el-button></div></template><el-table v-loading="loading" :data="context.professions" stripe empty-text="暂无专业"><el-table-column prop="name" label="专业名称" min-width="180" /><el-table-column prop="code" label="专业编码" min-width="120" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column v-if="isSuperAdmin" label="操作" width="100" fixed="right" align="center"><template #default="{ row }"><el-button text type="primary" :icon="EditPen" @click="editProfession(row)">编辑</el-button></template></el-table-column></el-table></el-card>
       </el-tab-pane>
       <el-tab-pane label="联调项目管理" name="projects">
-        <el-alert class="admin-notice" type="info" :closable="false" show-icon title="联调项目归属于专业；停用后会从工作范围选择器中隐藏。" />
-        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>联调项目列表</strong><span class="table-hint">共 {{ context.projects.length }} 个项目</span></div><el-button type="primary" :icon="Plus" @click="openCreateEntity('project')">新增联调项目</el-button></div></template><el-table v-loading="loading" :data="context.projects" stripe empty-text="暂无联调项目"><el-table-column prop="name" label="项目名称" min-width="190" /><el-table-column label="所属专业" min-width="150"><template #default="{ row }">{{ context.professions.find((item) => item.id === row.professionId)?.name || '—' }}</template></el-table-column><el-table-column prop="code" label="项目编码" min-width="120" /><el-table-column prop="engineCode" label="处理引擎" min-width="120"><template #default="{ row }">{{ row.engineCode || '—' }}</template></el-table-column><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="100" fixed="right"><template #default="{ row }"><el-button text type="primary" :icon="EditPen" @click="editProject(row)">编辑</el-button></template></el-table-column></el-table></el-card>
+        <el-alert class="admin-notice" type="info" :closable="false" show-icon title="联调项目按线路管理；停用后会从工作范围选择器中隐藏，但仍可在此列表查看并重新启用。" />
+        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>联调项目列表</strong><span class="table-hint">当前授权线路 {{ managedProjects.length }} 个项目；可复制其他线路项目作为新项目起点</span></div><el-button type="primary" :icon="Plus" @click="openCreateEntity('project')">新增联调项目</el-button></div></template><el-table v-loading="loading" :data="managedProjects" stripe empty-text="当前授权线路暂无联调项目"><el-table-column prop="name" label="项目名称" min-width="190" /><el-table-column label="所属线路" min-width="120"><template #default="{ row }">{{ context.lines.find((item) => item.id === row.lineId)?.name || '—' }}</template></el-table-column><el-table-column prop="code" label="项目编码" min-width="120" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="100" fixed="right" align="center"><template #default="{ row }"><el-button v-if="canEditProject(row)" text type="primary" :icon="EditPen" @click="editProject(row)">编辑</el-button></template></el-table-column></el-table></el-card>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -180,7 +204,23 @@ onMounted(load)
     <el-form label-position="top">
       <template v-if="entityType === 'line'"><div class="admin-grid admin-grid-two"><el-form-item label="线路编码" required><el-input v-model="lineForm.code" placeholder="例如 9" /></el-form-item><el-form-item label="线路名称" required><el-input v-model="lineForm.name" placeholder="例如 9号线" /></el-form-item></div><el-form-item label="状态"><el-switch v-model="lineForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></template>
       <template v-else-if="entityType === 'profession'"><div class="admin-grid admin-grid-two"><el-form-item label="专业编码" required><el-input v-model="professionForm.code" placeholder="例如 ZDH" /></el-form-item><el-form-item label="专业名称" required><el-input v-model="professionForm.name" placeholder="例如 自动化" /></el-form-item></div><el-form-item label="状态"><el-switch v-model="professionForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></template>
-      <template v-else><div class="admin-grid admin-grid-two"><el-form-item label="所属专业" required><el-select v-model="projectForm.professionId" placeholder="选择专业"><el-option v-for="item in context.professions" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item><el-form-item label="项目编码" required><el-input v-model="projectForm.code" placeholder="例如 FAS" /></el-form-item><el-form-item label="项目名称" required><el-input v-model="projectForm.name" placeholder="例如 火灾自动报警" /></el-form-item><el-form-item label="处理引擎代码"><el-input v-model="projectForm.engineCode" placeholder="例如 T19" /></el-form-item></div><el-form-item label="项目说明"><el-input v-model="projectForm.description" placeholder="选填" /></el-form-item><el-form-item label="状态"><el-switch v-model="projectForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></template>
+      <template v-else>
+        <el-alert v-if="editingProject" class="admin-notice" type="info" :closable="false" show-icon title="项目按线路归属；修改项目编码只影响后续新增配置，已有业务显示 ID 保持不变。" />
+        <div v-if="!editingProject" class="admin-grid admin-grid-two">
+          <el-form-item label="从其他线路复制（可选）">
+            <el-select filterable clearable placeholder="选择项目作为起点" @change="(id) => { const source = context.projects.find((item) => String(item.id) === String(id)); if (source) Object.assign(projectForm, { code: source.code, name: source.name, description: source.description, engineCode: source.engineCode }) }">
+              <el-option v-for="item in context.projects.filter((project) => String(project.lineId) !== String(projectForm.lineId))" :key="item.id" :label="`${context.lines.find((line) => line.id === item.lineId)?.name || ''} / ${item.code} · ${item.name}${item.isEnabled ? '' : '（停用）'}`" :value="item.id" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <div class="admin-grid admin-grid-two">
+          <el-form-item label="所属线路" required><el-select v-model="projectForm.lineId" :disabled="isSuperAdmin ? false : projectLines.length <= 1" placeholder="选择线路"><el-option v-for="item in projectLines" :key="item.id" :label="item.name" :value="item.id" :disabled="item.isEnabled === false && String(item.id) !== String(projectForm.lineId)" /></el-select></el-form-item>
+          <el-form-item label="项目编码" required><el-input v-model="projectForm.code" placeholder="例如 T19" /></el-form-item>
+          <el-form-item label="项目名称" required><el-input v-model="projectForm.name" placeholder="例如 FAS系统测试" /></el-form-item>
+        </div>
+        <el-form-item label="项目说明"><el-input v-model="projectForm.description" placeholder="选填" /></el-form-item>
+        <el-form-item label="状态"><el-switch v-model="projectForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item>
+      </template>
     </el-form>
     <template #footer><el-button @click="entityDialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="entityType === 'line' ? saveLine() : entityType === 'profession' ? saveProfession() : saveProject()">保存</el-button></template>
   </el-dialog>

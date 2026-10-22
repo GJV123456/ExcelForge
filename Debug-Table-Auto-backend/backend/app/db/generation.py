@@ -50,11 +50,7 @@ class GenerationRepository:
         self.database.ensure_schema()
         generation_id = str(uuid4())
         step_count = sum(len(content.operation_steps) for content in request.test_contents)
-        result_count = sum(
-            len(step.results)
-            for content in request.test_contents
-            for step in content.operation_steps
-        )
+        result_count = sum(len(step.results) for content in request.test_contents for step in content.operation_steps)
         discipline_count = sum(
             len(result.responsible_disciplines)
             for content in request.test_contents
@@ -207,9 +203,7 @@ class GenerationRepository:
                 ).fetchall()
         return [self._summary(row) for row in rows]
 
-    def get_generation(
-        self, generation_id: str, integration_code: str | None = None
-    ) -> GenerationDetail | None:
+    def get_generation(self, generation_id: str, integration_code: str | None = None) -> GenerationDetail | None:
         self.database.ensure_schema()
         with closing(self.database._connect()) as connection, connection:
             if integration_code:
@@ -218,9 +212,7 @@ class GenerationRepository:
                     (generation_id, integration_code.strip().upper()),
                 ).fetchone()
             else:
-                run = connection.execute(
-                    "SELECT * FROM generation_runs WHERE id = ?", (generation_id,)
-                ).fetchone()
+                run = connection.execute("SELECT * FROM generation_runs WHERE id = ?", (generation_id,)).fetchone()
             if run is None:
                 return None
             rows = connection.execute(
@@ -315,16 +307,13 @@ class GenerationRepository:
                 )
         return detail
 
-    def get_output(
-        self, generation_id: str, integration_code: str | None = None
-    ) -> tuple[str, bytes] | None:
+    def get_output(self, generation_id: str, integration_code: str | None = None) -> tuple[str, bytes] | None:
         """Return the stored workbook bytes and filename for a successful run."""
         self.database.ensure_schema()
         with closing(self.database._connect()) as connection, connection:
             if integration_code:
                 row = connection.execute(
-                    "SELECT filename, output_blob FROM generation_runs "
-                    "WHERE id = ? AND integration_code = ?",
+                    "SELECT filename, output_blob FROM generation_runs WHERE id = ? AND integration_code = ?",
                     (generation_id, integration_code.strip().upper()),
                 ).fetchone()
             else:
@@ -358,4 +347,3 @@ class GenerationRepository:
                 disciplines=int(row["discipline_count"]),
             ),
         )
-

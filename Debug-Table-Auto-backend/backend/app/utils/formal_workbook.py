@@ -92,12 +92,14 @@ def _formal_rows(workbook: FormalWorkbook) -> tuple[list[list[str | int]], ...]:
             for station in workbook.location.stations
         ]
     else:
-        location = [[
-            workbook.location.location_type,
-            workbook.location.direction,
-            workbook.location.start_station,
-            workbook.location.end_station,
-        ]]
+        location = [
+            [
+                workbook.location.location_type,
+                workbook.location.direction,
+                workbook.location.start_station,
+                workbook.location.end_station,
+            ]
+        ]
     contents = [[content.generated_content] for content in workbook.test_contents]
     steps: list[list[str | int]] = []
     results: list[list[str | int]] = []
@@ -108,10 +110,17 @@ def _formal_rows(workbook: FormalWorkbook) -> tuple[list[list[str | int]], ...]:
             step_excel_row = next_step_excel_row
             next_step_excel_row += 1
             steps.append([content_excel_row, step.description, step.ratio_change])
-            results.extend([
-                [step_excel_row, result.description, ",".join(result.responsible_disciplines), ""]
-                for result in step.results
-            ])
+            results.extend(
+                [
+                    [
+                        step_excel_row,
+                        result.description,
+                        ",".join(result.responsible_disciplines),
+                        "",
+                    ]
+                    for result in step.results
+                ]
+            )
     return location, contents, steps, results, []
 
 

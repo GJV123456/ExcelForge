@@ -11,7 +11,8 @@ const safeDecodeURIComponent = (value) => {
 }
 
 const sanitizeFilename = (value) => {
-  const basename = value.split(/[\\/]/).pop().replace(/[\u0000-\u001f<>:"|?*]/g, '').trim()
+  if (/[\\/]/.test(value)) return DEFAULT_FILENAME
+  const basename = value.replace(/[\u0000-\u001f<>:"|?*]/g, '').trim()
   return /\.(xls|xlsx|csv)$/i.test(basename) ? basename : DEFAULT_FILENAME
 }
 

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import hmac
-from typing_extensions import TypedDict
 
 from fastapi import APIRouter, Request
+from typing_extensions import TypedDict
 
 from app.db.auth import AuthRepository, AuthUser
 from app.exceptions import BusinessError
@@ -78,13 +78,11 @@ def register(payload: RegisterRequest, request: Request) -> LoginResponse:
     if not payload.agree:
         raise BusinessError("请先同意隐私条款和服务条款", "AUTH_AGREEMENT_REQUIRED", path=["agree"])
     if not hmac.compare_digest(payload.password, payload.confirm_password):
-        raise BusinessError(
-            "两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"]
-        )
+        raise BusinessError("两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"])
     if repository.count_users():
-        raise BusinessError(
-            "系统已完成初始化，请联系管理员创建账号", "AUTH_REGISTRATION_CLOSED", status_code=409
-        )
+        raise BusinessError("系统已完成初始化，请联系管理员创建账号", "AUTH_REGISTRATION_CLOSED", status_code=403)
+    # One-time first-admin setup remains available when no credentials were
+    # provisioned by the deployment. The public UI has no registration flow.
     user = repository.create_user(payload.username, payload.password, payload.display_name)
     return {"data": _login_data(repository, user, remember=False)}
 
@@ -105,12 +103,8 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
 def change_password(payload: ChangePasswordRequest, request: Request) -> dict[str, str]:
     current = _current_user(request, request.headers.get("Authorization"))
     if not hmac.compare_digest(payload.new_password, payload.confirm_password):
-        raise BusinessError(
-            "两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"]
-        )
-    _repository(request).change_password(
-        current["id"], payload.current_password, payload.new_password
-    )
+        raise BusinessError("两次输入的密码不一致", "AUTH_PASSWORD_CONFIRM_MISMATCH", path=["confirmPassword"])
+    _repository(request).change_password(current["id"], payload.current_password, payload.new_password)
     return {"message": "密码修改成功"}
 
 

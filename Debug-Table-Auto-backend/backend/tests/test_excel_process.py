@@ -26,12 +26,12 @@ from app.domain.workbook import (
 from app.main import create_app
 from app.schemas.excel import ExcelProcessRequest
 from app.services.formal_processor import process_formal_request
+from app.utils.formal_workbook import build_formal_workbook
 from app.utils.template_provider import (
     DEFAULT_TEMPLATE_PATH,
     EXPECTED_SHEET_NAMES,
     file_sha256,
 )
-from app.utils.formal_workbook import build_formal_workbook
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "excel_process_v2_request.json"
 
@@ -148,9 +148,7 @@ def test_mixed_blank_and_explicit_workspace_codes_report_unmatched_legacy_rows()
                     {
                         "description": "测试状态反馈",
                         "ratioChange": "否",
-                        "results": [
-                            {"description": "正确显示状态", "responsibleDisciplines": ["自动化"]}
-                        ],
+                        "results": [{"description": "正确显示状态", "responsibleDisciplines": ["自动化"]}],
                     }
                 ],
             },
@@ -255,8 +253,7 @@ def test_parallel_generation_does_not_mix_requests() -> None:
         outputs = list(executor.map(generate, (first, second)))
 
     values = [
-        xlrd.open_workbook(file_contents=content).sheet_by_name("测试内容").cell_value(2, 0)
-        for content in outputs
+        xlrd.open_workbook(file_contents=content).sheet_by_name("测试内容").cell_value(2, 0) for content in outputs
     ]
     assert values == ["并发甲", "并发乙"]
 
@@ -278,9 +275,7 @@ def test_filename_contains_station_timestamp_and_unique_types() -> None:
 
 def test_filename_uses_canonical_source_filename_and_refreshes_date() -> None:
     payload = _payload()
-    payload["sourceFilename"] = (
-        "T19-角江路站-03-FAS设备信息监视-吸气式主机_20251231_导入版V1.xls"
-    )
+    payload["sourceFilename"] = "T19-角江路站-03-FAS设备信息监视-吸气式主机_20251231_导入版V1.xls"
     request = ExcelProcessRequest.model_validate(payload)
 
     result = process_formal_request(
@@ -294,9 +289,7 @@ def test_filename_uses_canonical_source_filename_and_refreshes_date() -> None:
 
 def test_filename_uses_station_telephone_subtype_even_when_source_name_conflicts() -> None:
     payload = _payload()
-    payload["sourceFilename"] = (
-        "T19-角江路站-24-FAS设备信息监视-区间-消防电话和插孔电话_20251231_导入版V1.xls"
-    )
+    payload["sourceFilename"] = "T19-角江路站-24-FAS设备信息监视-区间-消防电话和插孔电话_20251231_导入版V1.xls"
     for item in payload["testContents"]:
         item["equipmentType"] = "特殊模块"
         item["equipmentSubtype"] = "站内电话"
@@ -308,9 +301,7 @@ def test_filename_uses_station_telephone_subtype_even_when_source_name_conflicts
         generated_at=datetime(2026, 10, 19, 9, 8, 7),
     )
 
-    assert result.filename == (
-        "T19-角江路站-24-FAS设备信息监视-站内-消防电话和插孔电话_20261019_导入版V1.xls"
-    )
+    assert result.filename == ("T19-角江路站-24-FAS设备信息监视-站内-消防电话和插孔电话_20261019_导入版V1.xls")
 
 
 def test_writes_all_selected_stations_to_test_location_sheet() -> None:
@@ -336,9 +327,7 @@ def test_rejects_whitespace_only_text_and_discipline_delimiters() -> None:
     whitespace_payload = _payload()
     whitespace_payload["testContents"][0]["operationSteps"][0]["description"] = "   "
     comma_payload = _payload()
-    comma_payload["testContents"][0]["operationSteps"][0]["results"][0][
-        "responsibleDisciplines"
-    ] = ["FAS,综合监控"]
+    comma_payload["testContents"][0]["operationSteps"][0]["results"][0]["responsibleDisciplines"] = ["FAS,综合监控"]
 
     with _formal_client() as client:
         whitespace_response = client.post("/api/excel/process", json=whitespace_payload)
@@ -354,9 +343,7 @@ def test_generates_400v_cutoff_rows() -> None:
         {
             "description": "执行切非测试",
             "ratioChange": "否",
-            "results": [
-                {"description": "系统显示切非状态", "responsibleDisciplines": ["FAS"]}
-            ],
+            "results": [{"description": "系统显示切非状态", "responsibleDisciplines": ["FAS"]}],
         }
     ]
     payload = {
@@ -415,7 +402,3 @@ def test_writer_rejects_biff8_row_overflow_before_copying_template() -> None:
         assert str(error) == "BIFF8 row limit exceeded"
     else:
         raise AssertionError("row overflow must be rejected")
-
-
-
-

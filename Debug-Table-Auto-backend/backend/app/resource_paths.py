@@ -63,9 +63,7 @@ def resolve_database_path(configured_path: Path | None = None) -> Path:
     return configured_path.expanduser().resolve() if configured_path else default_database_path()
 
 
-def resolve_catalog_database_path(
-    configured_path: Path | None, integration_code: str = "T19"
-) -> Path:
+def resolve_catalog_database_path(configured_path: Path | None, integration_code: str = "T19") -> Path:
     """Resolve an isolated catalog database for one integration project.
 
     T19 keeps using the configured legacy database so its existing catalog is

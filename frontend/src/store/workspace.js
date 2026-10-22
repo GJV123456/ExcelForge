@@ -12,6 +12,8 @@ export const useWorkspaceStore = defineStore('workspace', {
     selectedLineId: null,
     selectedProfessionId: null,
     selectedProjectId: null,
+    selectedDebugSubitemId: null,
+    selectedDebugDivisionId: null,
     loading: false,
     error: '',
     loaded: false
@@ -45,8 +47,10 @@ export const useWorkspaceStore = defineStore('workspace', {
           ?? this.lines.find((item) => sameId(item.id, saved.lineId))?.id ?? this.lines[0]?.id ?? null
         this.selectedProfessionId = this.professions.find((item) => sameId(item.id, assignedProfessionId))?.id
           ?? this.professions.find((item) => sameId(item.id, saved.professionId))?.id ?? this.professions[0]?.id ?? null
-        const projects = this.projects.filter((item) => sameId(item.professionId, this.selectedProfessionId))
+        const projects = this.projects.filter((item) => !item.lineId || sameId(item.lineId, this.selectedLineId))
         this.selectedProjectId = projects.find((item) => sameId(item.id, saved.projectId))?.id ?? projects[0]?.id ?? null
+        this.selectedDebugSubitemId = saved.debugSubitemId || null
+        this.selectedDebugDivisionId = saved.debugDivisionId || null
         this.persist()
         this.loaded = true
       } catch (error) {
@@ -65,16 +69,23 @@ export const useWorkspaceStore = defineStore('workspace', {
         : this.selectedProfessionId
       this.selectedProfessionId = this.professions.find((item) => sameId(item.id, preferredProfessionId))?.id
         ?? this.professions[0]?.id ?? null
-      const projects = this.projects.filter((item) => sameId(item.professionId, this.selectedProfessionId))
+      const projects = this.projects.filter((item) => !item.lineId || sameId(item.lineId, this.selectedLineId))
       this.selectedProjectId = projects[0]?.id ?? null
+      this.selectedDebugSubitemId = null
+      this.selectedDebugDivisionId = null
       this.persist()
     },
     setProfession(value) {
       this.selectedProfessionId = value || null
-      this.selectedProjectId = this.projects.find((item) => sameId(item.professionId, this.selectedProfessionId))?.id ?? null
+      const projects = this.projects.filter((item) => !item.lineId || sameId(item.lineId, this.selectedLineId))
+      if (!projects.some((item) => sameId(item.id, this.selectedProjectId))) this.selectedProjectId = projects[0]?.id ?? null
+      this.selectedDebugSubitemId = null
+      this.selectedDebugDivisionId = null
       this.persist()
     },
-    setProject(value) { this.selectedProjectId = value || null; this.persist() },
-    persist() { localStorage.setItem('excelforge_scope', JSON.stringify({ lineId: this.selectedLineId, professionId: this.selectedProfessionId, projectId: this.selectedProjectId })) }
+    setProject(value) { this.selectedProjectId = value || null; this.selectedDebugSubitemId = null; this.selectedDebugDivisionId = null; this.persist() },
+    setDebugSubitem(value) { this.selectedDebugSubitemId = value || null; this.selectedDebugDivisionId = null; this.persist() },
+    setDebugDivision(value) { this.selectedDebugDivisionId = value || null; this.persist() },
+    persist() { localStorage.setItem('excelforge_scope', JSON.stringify({ lineId: this.selectedLineId, professionId: this.selectedProfessionId, projectId: this.selectedProjectId, debugSubitemId: this.selectedDebugSubitemId, debugDivisionId: this.selectedDebugDivisionId })) }
   }
 })

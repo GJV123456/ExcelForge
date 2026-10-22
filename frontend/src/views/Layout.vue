@@ -10,8 +10,8 @@ import { changePassword, logout as logoutRequest } from '../api/auth'
 import { getApiErrorMessage } from '../utils/httpError'
 const route = useRoute(); const router = useRouter(); const user = useUserStore(); const excel = useExcelStore(); const workspace = useWorkspaceStore()
 const selectedProject = computed(() => getIntegrationProject(excel.selectedIntegration))
-const canOpenConfig = computed(() => workspace.isSelected)
-const canOpenAdmin = computed(() => user.userInfo.role === 'super_admin')
+const canOpenConfig = computed(() => Boolean(workspace.selectedLineId && workspace.selectedProfessionId))
+const canOpenAdmin = computed(() => ['super_admin', 'line_admin', 'professional_configurator'].includes(user.userInfo.role))
 const syncEngineProject = () => { excel.setIntegration(workspace.selectedProject?.engineCode || workspace.selectedProject?.code || '') }
 onMounted(async () => { try { await workspace.reload(); if (workspace.currentUser.role) user.setUser(user.token, { ...user.userInfo, ...workspace.currentUser }); syncEngineProject() } catch (error) { ElMessage.error(workspace.error || error.message || '工作区数据加载失败') } })
 watch(() => workspace.selectedProjectId, syncEngineProject)
