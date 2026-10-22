@@ -32,9 +32,9 @@ export const useWorkspaceStore = defineStore('workspace', {
       try {
         const response = await getWorkspaceContext()
         const data = response.data?.data || {}
-        this.lines = data.lines || []
-        this.professions = data.professions || []
-        this.projects = data.projects || []
+        this.lines = (data.lines || []).filter((item) => item.isEnabled !== false)
+        this.professions = (data.professions || []).filter((item) => item.isEnabled !== false)
+        this.projects = (data.projects || []).filter((item) => item.isEnabled !== false)
         this.currentUser = data.currentUser || {}
         const saved = JSON.parse(localStorage.getItem('excelforge_scope') || '{}')
         // Open scoped accounts in their own workspace first so edit controls

@@ -6,7 +6,7 @@ import { ElMessage } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { useWorkspaceStore } from '../store/workspace'
 import { useUserStore } from '../store/user'
-import { batchCopyWorkspaceConfigs, createWorkspaceConfig, downloadWorkspaceConfigTemplate, downloadWorkspaceTemplate, getWorkspaceCatalog, getWorkspaceConfigs, getWorkspaceDebugItems, importWorkspaceConfigs, previewWorkspaceConfigImport, setWorkspaceConfigStatus, updateWorkspaceConfig } from '../api/workspace'
+import { batchCopyWorkspaceConfigs, createWorkspaceConfig, downloadWorkspaceConfigTemplate, downloadWorkspaceTemplate, getWorkspaceCatalog, getWorkspaceConfigs, getWorkspaceDebugItems, getWorkspaceConfigCopyCandidates, importWorkspaceConfigs, previewWorkspaceConfigImport, setWorkspaceConfigStatus, updateWorkspaceConfig } from '../api/workspace'
 import { downloadResponseBlob } from '../utils/download'
 import { getApiErrorMessage } from '../utils/httpError'
 import WorkspaceScopePicker from '../components/WorkspaceScopePicker.vue'
@@ -159,32 +159,11 @@ const save = async () => {
 const toggle = async (row, enabled) => { const previous = row.isEnabled; row.isEnabled = enabled; try { await setWorkspaceConfigStatus(row.id, enabled); ElMessage.success(enabled ? '配置已启用' : '配置已停用') } catch (error) { row.isEnabled = previous; ElMessage.error(await getApiErrorMessage(error)) } }
 const editSelected = () => { if (selectedConfig.value) openEdit(selectedConfig.value) }
 const loadCopyCandidates = async () => {
-    const projects = workspace.projects
-  const linesById = new Map(workspace.lines.map((item) => [String(item.id), item]))
-  const professionsById = new Map(workspace.professions.map((item) => [String(item.id), item]))
   copyVisible.value = true
   copyCandidatesLoading.value = true
   try {
-    const sources = projects.flatMap((project) => workspace.professions.map((profession) => ({ project, profession })))
-    const responses = new Array(sources.length)
-    let nextProjectIndex = 0
-    const workers = Array.from({ length: Math.min(8, sources.length) }, async () => {
-      while (nextProjectIndex < sources.length) {
-        const index = nextProjectIndex++
-        const { project, profession } = sources[index]
-        const response = await getWorkspaceConfigs({ lineId: project.lineId, professionId: profession.id, projectId: project.id })
-        const line = linesById.get(String(project.lineId))
-        responses[index] = (response.data?.data || []).map((item) => ({
-          ...item,
-          sourceLineName: line?.name || `线路 ${project.lineId}`,
-          sourceProfessionName: profession?.name || `专业 ${project.professionId}`,
-          sourceProjectCode: project.code,
-          sourceProjectName: project.name,
-        }))
-      }
-    })
-    await Promise.all(workers)
-    sourceConfigs.value = responses.flat().filter((item) => item.lineId !== workspace.selectedLineId || item.professionId !== workspace.selectedProfessionId || item.projectId !== workspace.selectedProjectId)
+    const response = await getWorkspaceConfigCopyCandidates(scope.value)
+    sourceConfigs.value = response.data?.data || []
     expandedCopyGroupKey.value = copyConfigGroups.value[0]?.key || null
     copySelection.value = []
     copySearchInput.value = ''
@@ -217,7 +196,7 @@ const copySelected = async () => {
     ElMessage.success(copied.length ? `已复制或补齐 ${copied.length} 条配置，列表已更新` : '所选配置已存在于当前项目，未重复复制')
   } catch (error) { ElMessage.error(await getApiErrorMessage(error)) } finally { copying.value = false }
 }
-const downloadTemplate = async () => { try { downloadResponseBlob(await downloadWorkspaceTemplate()); ElMessage.success('测试数据导入模板已下载') } catch { ElMessage.error('测试数据导入模板下载失败') } }
+const downloadTemplate = async () => { try { const templateScope = workspace.selectedLineId && workspace.selectedProjectId ? { lineId: workspace.selectedLineId, projectId: workspace.selectedProjectId } : undefined; downloadResponseBlob(await downloadWorkspaceTemplate(templateScope)); ElMessage.success(templateScope ? '测试数据模板及当前项目联调配置编码清单已下载' : '测试数据导入模板已下载') } catch (error) { ElMessage.error(await getApiErrorMessage(error)) } }
 const downloadConfigTemplate = async () => { try { downloadResponseBlob(await downloadWorkspaceConfigTemplate(scope.value)); ElMessage.success('联调配置规范模板（含样例）已下载') } catch { ElMessage.error('联调配置规范模板下载失败') } }
 const downloadTemplateChoice = (choice) => choice === 'config' ? downloadConfigTemplate() : downloadTemplate()
 const importConfigFile = async (event) => {

@@ -38,6 +38,16 @@ const sortedManagedProjects = computed(() => [...managedProjects.value].sort((le
   const rightLine = context.value.lines.find((line) => String(line.id) === String(right.lineId))
   return compareSortOrder(leftLine || {}, rightLine || {}) || compareSortOrder(left, right)
 }))
+const managedProjectGroups = computed(() => {
+  const groups = new Map()
+  for (const project of sortedManagedProjects.value) {
+    const line = context.value.lines.find((item) => String(item.id) === String(project.lineId))
+    const key = String(project.lineId ?? 'none')
+    if (!groups.has(key)) groups.set(key, { key, lineName: line?.name || '未分配线路', projects: [] })
+    groups.get(key).projects.push(project)
+  }
+  return [...groups.values()]
+})
 const lineProjects = (lineId) => managedProjects.value
   .filter((item) => String(item.lineId) === String(lineId))
   .sort(compareSortOrder)
@@ -70,7 +80,7 @@ const errorMessage = async (error, fallback) => {
 }
 const compareSortOrder = (left, right) => {
   const orderDifference = Number(left.sortOrder ?? left.sort_order ?? 0) - Number(right.sortOrder ?? right.sort_order ?? 0)
-  return orderDifference || Number(left.id ?? 0) - Number(right.id ?? 0)
+  return orderDifference || String(left.code ?? '').localeCompare(String(right.code ?? ''), 'zh-CN', { numeric: true }) || Number(left.id ?? 0) - Number(right.id ?? 0)
 }
 const load = async () => {
   loading.value = true
@@ -226,7 +236,8 @@ const openCreateEntity = (type, copyProject = false) => {
   }
   if (type === 'project') {
     const lineId = context.value.lines.find((item) => String(item.id) === String(context.value.currentUser?.lineId))?.id ?? workspace.selectedLineId ?? context.value.lines.find((item) => item.isEnabled)?.id ?? null
-    Object.assign(projectForm, { id: null, lineId, professionId: context.value.professions.find((item) => String(item.id) === String(context.value.currentUser?.professionId))?.id ?? workspace.selectedProfessionId ?? context.value.professions.find((item) => item.isEnabled)?.id ?? null, code: '', name: '', description: '', engineCode: '', sortOrder: lineProjects(lineId).length + 1, isEnabled: true })
+    const nextProjectOrder = Math.max(0, ...lineProjects(lineId).map((item) => Number(item.sortOrder) || 0)) + 1
+    Object.assign(projectForm, { id: null, lineId, professionId: context.value.professions.find((item) => String(item.id) === String(context.value.currentUser?.professionId))?.id ?? workspace.selectedProfessionId ?? context.value.professions.find((item) => item.isEnabled)?.id ?? null, code: '', name: '', description: '', engineCode: '', sortOrder: nextProjectOrder, isEnabled: true })
   }
   entityDialogVisible.value = true
 }
@@ -260,7 +271,7 @@ onMounted(load)
       </el-tab-pane>
       <el-tab-pane label="联调项目管理" name="projects">
         <el-alert class="admin-notice" type="info" :closable="false" show-icon title="联调项目按线路管理；停用后会从工作范围选择器中隐藏，但仍可在此列表查看并重新启用。" />
-        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>联调项目列表</strong><span class="table-hint">当前授权线路 {{ managedProjects.length }} 个项目</span></div><div class="project-actions"><el-button :icon="CopyDocument" @click="openCreateEntity('project', true)">复制其他线路项目</el-button><el-button type="primary" :icon="Plus" @click="openCreateEntity('project')">新增联调项目</el-button></div></div></template><el-table v-loading="loading || saving" :data="sortedManagedProjects" stripe empty-text="当前授权线路暂无联调项目"><el-table-column prop="name" label="项目名称" min-width="190" /><el-table-column label="所属线路" min-width="120"><template #default="{ row }">{{ context.lines.find((item) => item.id === row.lineId)?.name || '—' }}</template></el-table-column><el-table-column prop="code" label="项目编码" min-width="120" /><el-table-column prop="sortOrder" label="排序" width="90" /><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="180" fixed="right" align="center"><template #default="{ row }"><div class="entity-row-actions"><el-button v-if="canEditProject(row)" text type="primary" :icon="EditPen" @click="editProject(row)">编辑</el-button><el-switch v-if="canEditProject(row)" :model-value="row.isEnabled" inline-prompt active-text="启用" inactive-text="停用" @change="toggleProject(row, $event)" /></div></template></el-table-column></el-table></el-card>
+        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>联调项目列表</strong><span class="table-hint">当前授权线路 {{ managedProjects.length }} 个项目</span></div><div class="project-actions"><el-button :icon="CopyDocument" @click="openCreateEntity('project', true)">复制其他线路项目</el-button><el-button type="primary" :icon="Plus" @click="openCreateEntity('project')">新增联调项目</el-button></div></div></template><el-collapse v-loading="loading || saving" accordion class="project-groups"><el-collapse-item v-for="group in managedProjectGroups" :key="group.key" :name="group.key" :title="`${group.lineName}（${group.projects.length}）`"><el-table :data="group.projects" stripe empty-text="该线路暂无联调项目"><el-table-column prop="name" label="项目名称" min-width="190" /><el-table-column prop="code" label="项目编码" min-width="120" /><el-table-column prop="sortOrder" label="排序" width="90" /><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="180" fixed="right" align="center"><template #default="{ row }"><div class="entity-row-actions"><el-button v-if="canEditProject(row)" text type="primary" :icon="EditPen" @click="editProject(row)">编辑</el-button><el-switch v-if="canEditProject(row)" :model-value="row.isEnabled" inline-prompt active-text="启用" inactive-text="停用" @change="toggleProject(row, $event)" /></div></template></el-table-column></el-table></el-collapse-item><el-empty v-if="!managedProjectGroups.length" description="当前授权线路暂无联调项目" /></el-collapse></el-card>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -286,8 +297,8 @@ onMounted(load)
         <el-alert v-if="editingProject" class="admin-notice" type="info" :closable="false" show-icon title="项目按线路归属；修改项目编码只影响后续新增配置，已有业务显示 ID 保持不变。" />
         <div v-if="!editingProject" class="admin-grid admin-grid-two">
           <el-form-item :label="projectCopyMode ? '选择来源项目' : '从其他线路复制项目（可选）'">
-            <el-select filterable clearable placeholder="选择项目，复制名称和编码后保存为本线路项目" @change="(id) => { const source = context.projects.find((item) => String(item.id) === String(id)); if (source) Object.assign(projectForm, { code: source.code, name: source.name, description: source.description, engineCode: source.engineCode }) }">
-              <el-option v-for="item in context.projects.filter((project) => String(project.lineId) !== String(projectForm.lineId))" :key="item.id" :label="`${context.lines.find((line) => line.id === item.lineId)?.name || ''} / ${item.code} · ${item.name}${item.isEnabled ? '' : '（停用）'}`" :value="item.id" />
+            <el-select filterable clearable placeholder="选择已启用项目，复制名称和编码后保存为本线路项目" @change="(id) => { const source = context.projects.find((item) => String(item.id) === String(id)); if (source) Object.assign(projectForm, { code: source.code, name: source.name, description: source.description, engineCode: source.engineCode }) }">
+              <el-option v-for="item in context.projects.filter((project) => project.isEnabled !== false && String(project.lineId) !== String(projectForm.lineId))" :key="item.id" :label="`${context.lines.find((line) => line.id === item.lineId)?.name || ''} / ${item.code} · ${item.name}`" :value="item.id" />
             </el-select>
           </el-form-item>
         </div>
@@ -313,6 +324,10 @@ onMounted(load)
 .admin-tabs { margin-top: 10px; }
 .admin-notice { margin: 10px 0 18px; }
 .admin-card { margin-bottom: 18px; }
+.project-groups :deep(.el-collapse-item__header) { height: 50px; padding: 0 18px; color: #29466e; font-weight: 700; background: #f7f9fc; }
+.project-groups :deep(.el-collapse-item__wrap) { border-bottom: 0; }
+.project-groups :deep(.el-collapse-item__content) { padding: 0; }
+.project-groups :deep(.el-table) { border: 0; }
 .admin-card :deep(.el-card__header) { padding: 17px 22px; }
 .card-heading strong { display: block; color: #2d405e; font-size: 15px; }
 .card-heading span { display: block; margin-top: 5px; color: #8a98aa; font-size: 12px; }

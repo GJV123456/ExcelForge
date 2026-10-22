@@ -341,7 +341,7 @@ class WorkspaceRepository:
         self, scope: ScopeSelection, category: str, include_disabled: bool = False
     ) -> list[dict[str, Any]]:
         self.ensure_schema()
-        if category == "disciplines":
+        if category in {"disciplines", "stations"}:
             with closing(self._connect()) as validation:
                 if (
                     validation.execute(
@@ -351,7 +351,7 @@ class WorkspaceRepository:
                     is None
                 ):
                     raise BusinessError("线路不存在或已停用", "WORKSPACE_SCOPE_NOT_FOUND", status_code=404)
-                if (
+                if category == "disciplines" and (
                     validation.execute(
                         "SELECT 1 FROM workspace_professions WHERE id = ? AND is_enabled = 1",
                         (scope.profession_id,),
@@ -372,9 +372,21 @@ class WorkspaceRepository:
             query += " ORDER BY sort_order, name COLLATE NOCASE, id"
             return [self._catalog_item(row) for row in connection.execute(query, params).fetchall()]
 
+    def list_line_stations(self, line_id: int, include_disabled: bool = False) -> list[dict[str, Any]]:
+        self.ensure_schema()
+        query = "SELECT * FROM workspace_catalog_items WHERE category = 'stations' AND line_id = ?"
+        if not include_disabled:
+            query += " AND is_enabled = 1"
+        query += " ORDER BY sort_order, name COLLATE NOCASE, id"
+        with closing(self._connect()) as connection:
+            return [
+                self._catalog_item(row)
+                for row in connection.execute(query, (line_id,)).fetchall()
+            ]
+
     def save_catalog_item(self, payload: WorkspaceCatalogWriteRequest, item_id: str | None = None) -> dict[str, Any]:
         self.ensure_schema()
-        if payload.category == "disciplines":
+        if payload.category in {"disciplines", "stations"}:
             with closing(self._connect()) as validation:
                 if (
                     validation.execute(
@@ -384,7 +396,7 @@ class WorkspaceRepository:
                     is None
                 ):
                     raise BusinessError("线路不存在或已停用", "WORKSPACE_SCOPE_NOT_FOUND", status_code=404)
-                if (
+                if payload.category == "disciplines" and (
                     validation.execute(
                         "SELECT 1 FROM workspace_professions WHERE id = ? AND is_enabled = 1",
                         (payload.scope.profession_id,),
@@ -489,7 +501,13 @@ class WorkspaceRepository:
     def create_stations_batch(self, payload: WorkspaceStationsBatchWriteRequest) -> list[dict[str, Any]]:
         """Create several line-shared stations in one transaction."""
         self.ensure_schema()
-        self.get_scope(payload.scope)
+        with closing(self._connect()) as validation:
+            line = validation.execute(
+                "SELECT 1 FROM workspace_lines WHERE id = ? AND is_enabled = 1",
+                (payload.scope.line_id,),
+            ).fetchone()
+        if line is None:
+            raise BusinessError("线路不存在或已停用", "WORKSPACE_SCOPE_NOT_FOUND", status_code=404)
         names = [name.strip() for name in payload.names]
         if len({name.casefold() for name in names}) != len(names):
             raise BusinessError("站点名称重复，请修改后再保存", "WORKSPACE_CATALOG_EXISTS", status_code=409)
@@ -631,7 +649,7 @@ class WorkspaceRepository:
             if not include_disabled:
                 clauses.append("is_enabled = 1")
             query = "SELECT * FROM workspace_projects" + (" WHERE " + " AND ".join(clauses) if clauses else "")
-            query += " ORDER BY sort_order, id"
+            query += " ORDER BY sort_order, code COLLATE NOCASE, id"
             return [self._project(row) for row in c.execute(query, params).fetchall()]
 
     def create_line(self, payload: LineWriteRequest) -> dict[str, Any]:
@@ -864,6 +882,63 @@ class WorkspaceRepository:
             query += " ORDER BY business_id"
             rows = c.execute(query, params).fetchall()
             return [self._config(c, row) for row in rows]
+
+    def list_config_copy_candidates(
+        self, target: ScopeSelection
+    ) -> list[dict[str, Any]]:
+        """Load copy-dialog metadata in one lightweight query.
+
+        The dialog only needs identifiers and labels. Avoid hydrating every
+        rule tree (steps, results and aliases), which previously caused a
+        query per project/profession and several child queries per rule.
+        """
+        self.get_scope(target)
+        self.ensure_schema()
+        query = """
+            SELECT c.id, c.business_id, c.line_id, c.profession_id, c.project_id,
+                   c.debug_subitem_id, c.debug_division_id, c.config_code,
+                   c.device_type, c.description,
+                   l.name AS source_line_name,
+                   p.name AS source_profession_name,
+                   j.code AS source_project_code,
+                   j.name AS source_project_name
+            FROM workspace_configs AS c
+            JOIN workspace_lines AS l ON l.id = c.line_id AND l.is_enabled = 1
+            JOIN workspace_professions AS p ON p.id = c.profession_id AND p.is_enabled = 1
+            JOIN workspace_projects AS j
+              ON j.id = c.project_id AND j.line_id = c.line_id AND j.is_enabled = 1
+            WHERE c.is_enabled = 1
+              AND NOT (
+                c.line_id = ? AND c.profession_id = ? AND c.project_id = ?
+              )
+            ORDER BY c.line_id, j.sort_order, j.code COLLATE NOCASE,
+                     c.profession_id, c.business_id
+        """
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                query,
+                (target.line_id, target.profession_id, target.project_id),
+            ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "businessId": str(row["business_id"]),
+                "lineId": int(row["line_id"]),
+                "professionId": int(row["profession_id"]),
+                "projectId": int(row["project_id"]),
+                "debugSubitemId": row["debug_subitem_id"],
+                "debugDivisionId": row["debug_division_id"],
+                "configCode": str(row["config_code"]),
+                "deviceType": str(row["device_type"]),
+                "description": str(row["description"]),
+                "isEnabled": True,
+                "sourceLineName": str(row["source_line_name"]),
+                "sourceProfessionName": str(row["source_profession_name"]),
+                "sourceProjectCode": str(row["source_project_code"]),
+                "sourceProjectName": str(row["source_project_name"]),
+            }
+            for row in rows
+        ]
 
     def create_config(self, payload: ConfigWriteRequest, user_id: int) -> dict[str, Any]:
         line, profession, project = self.get_scope(payload.scope)

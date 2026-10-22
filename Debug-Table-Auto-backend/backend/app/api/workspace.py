@@ -382,6 +382,49 @@ def list_workspace_catalog(
     return {"data": data, "meta": {"count": len(data)}}
 
 
+@router.get("/stations")
+def list_workspace_stations(
+    request: Request,
+    line_id: Annotated[int, Query(alias="lineId", gt=0)],
+    include_disabled: Annotated[bool, Query(alias="includeDisabled")] = False,
+) -> dict[str, object]:
+    """List the station directory for a line without requiring a project selection."""
+    user = _current_user(request)
+    if include_disabled:
+        line = next(
+            (item for item in _repository(request).list_lines(include_disabled=True) if item["id"] == line_id),
+            None,
+        )
+        if line is None:
+            raise BusinessError("线路不存在", "WORKSPACE_SCOPE_NOT_FOUND", status_code=404)
+        if user.get("role") != ROLE_SUPER_ADMIN and user.get("lineId") != line_id:
+            raise BusinessError("当前账号没有查看该线路停用站点的权限", "WORKSPACE_FORBIDDEN", status_code=403)
+    data = _repository(request).list_line_stations(line_id, include_disabled)
+    return {"data": data, "meta": {"count": len(data)}}
+
+
+@router.get("/copy-candidates")
+def list_copy_candidates(
+    request: Request,
+    line_id: Annotated[int, Query(alias="lineId", gt=0)],
+    profession_id: Annotated[int, Query(alias="professionId", gt=0)],
+    project_id: Annotated[int, Query(alias="projectId", gt=0)],
+) -> dict[str, object]:
+    """Return all enabled source rules in one request for the copy dialog."""
+    user = _current_user(request)
+    repository = _repository(request)
+    target = ScopeSelection(lineId=line_id, professionId=profession_id, projectId=project_id)
+    _require_edit_scope(user, target)
+    candidates = repository.list_config_copy_candidates(target)
+    return {
+        "data": candidates,
+        "meta": {
+            "count": len(candidates),
+            "target": {"lineId": line_id, "professionId": profession_id, "projectId": project_id},
+        },
+    }
+
+
 @router.post("/catalog")
 def create_workspace_catalog_item(payload: WorkspaceCatalogWriteRequest, request: Request) -> dict[str, object]:
     user = _current_user(request)
@@ -439,22 +482,69 @@ def set_workspace_catalog_status(
 
 
 @router.get("/template", response_class=Response)
-def template(request: Request) -> Response:
+def template(
+    request: Request,
+    line_id: Annotated[int | None, Query(alias="lineId", gt=0)] = None,
+    project_id: Annotated[int | None, Query(alias="projectId", gt=0)] = None,
+) -> Response:
     _current_user(request)
-    content = _xls_workbook(
-        {
-            "数据导入模板": [
+    sheets: dict[str, list[list[object]]] = {
+        "数据导入模板": [
                 ["设备编码", "设备类型", "设备中文", "联调配置编码"],
                 ["DT-001", "垂梯", "垂梯 01", "FAS-垂梯-状态反馈"],
             ],
-            "填写说明": [
+        "填写说明": [
                 ["填写说明"],
                 ["设备编码、设备类型、设备中文为原始设备版必填列。"],
                 ["联调配置编码有值时按新配置匹配；留空时继续使用原有 FAS 兼容规则。"],
                 ["其他业务列可以保留，系统按列名读取。"],
             ],
-        }
-    )
+    }
+    if line_id is not None or project_id is not None:
+        if line_id is None or project_id is None:
+            raise BusinessError(
+                "下载联调配置编码清单需要同时指定线路和联调项目",
+                "WORKSPACE_SCOPE_REQUIRED",
+                status_code=422,
+            )
+        repository = _repository(request)
+        project = next((item for item in repository.list_projects(line_id=line_id) if item["id"] == project_id), None)
+        if project is None:
+            raise BusinessError("当前线路下未找到启用的联调项目", "WORKSPACE_PROJECT_NOT_FOUND", status_code=404)
+        config_rows: list[list[object]] = []
+        for profession in repository.list_professions():
+            scope = ScopeSelection(lineId=line_id, professionId=profession["id"], projectId=project_id)
+            subitems = repository.list_debug_items(scope, "debug_subitems", include_disabled=True)
+            subitem_names = {str(item["id"]): item["name"] for item in subitems}
+            division_names: dict[str, str] = {}
+            for subitem in subitems:
+                divisions = repository.list_debug_items(
+                    scope, "debug_divisions", parent_id=str(subitem["id"]), include_disabled=True
+                )
+                division_names.update({str(item["id"]): item["name"] for item in divisions})
+            for item in repository.list_configs(scope, include_disabled=True):
+                config_rows.append([
+                    profession["name"], item["businessId"], item["configCode"],
+                    subitem_names.get(str(item.get("debugSubitemId") or ""), ""),
+                    division_names.get(str(item.get("debugDivisionId") or ""), ""),
+                    item.get("deviceType", ""), item.get("description", ""),
+                    "启用" if item.get("isEnabled", True) else "停用",
+                ])
+        config_rows.sort(key=lambda row: (str(row[0]).casefold(), str(row[2]).casefold(), str(row[1])))
+        config_rows.insert(
+            0,
+            ["责任专业", "业务显示ID", "联调配置编码", "调试子项", "调试分项", "设备类型", "说明", "状态"],
+        )
+        if len(config_rows) == 1:
+            config_rows.append(["", "", "当前联调项目暂无配置编码", "", "", "", "", ""])
+        sheets["联调配置编码清单"] = config_rows
+        sheets["填写说明"].append(
+            [
+                f"联调配置编码清单对应 {project['code']}（{project['name']}），"
+                "汇总当前线路下所有专业的配置，包含启用及停用规则。"
+            ]
+        )
+    content = _xls_workbook(sheets)
     return Response(
         content=content,
         media_type="application/vnd.ms-excel",

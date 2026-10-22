@@ -1,7 +1,7 @@
 <script setup>
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { onMounted, ref, watch } from 'vue'
-import { getStations } from '../api/catalog'
+import { getWorkspaceStations } from '../api/workspace'
 import { useWorkspaceStore } from '../store/workspace'
 import { changeLocationType, changeStation } from '../utils/formalLocation'
 
@@ -13,7 +13,7 @@ const stationOptions = ref([])
 const loadStations = async () => {
   if (!workspace.selectedLineId) { stationOptions.value = []; return }
   try {
-    const response = await getStations({ lineId: workspace.selectedLineId })
+    const response = await getWorkspaceStations({ lineId: workspace.selectedLineId })
     stationOptions.value = (response.data?.data || []).map((station) => ({ value: station.name }))
   } catch {
     stationOptions.value = []

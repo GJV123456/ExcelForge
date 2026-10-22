@@ -809,6 +809,13 @@ def test_line_admin_can_view_disabled_projects_and_edit_project_scope(tmp_path: 
         management_context = client.get("/api/workspace/context", headers=line_admin, params={"includeDisabled": True})
         assert management_context.status_code == 200, management_context.text
         assert management_context.json()["data"]["projects"][0]["isEnabled"] is False
+        disabled_scope = {
+            "lineId": line["id"],
+            "professionId": profession["id"],
+            "projectId": project["id"],
+        }
+        unavailable_configs = client.get("/api/workspace/configs", headers=line_admin, params=disabled_scope)
+        assert unavailable_configs.status_code == 404
 
         updated = client.put(
             f"/api/workspace/projects/{project['id']}",
@@ -994,6 +1001,161 @@ def test_workspace_download_templates_have_samples_and_descriptive_names(tmp_pat
         assert sheet.cell_value(1, 5) == 1
         assert sheet.cell_value(5, 5) == 2
         assert config_book.sheet_by_name("填写说明").nrows >= 2
+
+
+def test_data_template_lists_codes_for_selected_line_and_project_including_disabled(tmp_path: Path) -> None:
+    with TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "template-codes.sqlite3"))) as client:
+        registered = client.post(
+            "/api/auth/register",
+            json={
+                "username": "admin",
+                "password": "secret123",
+                "confirmPassword": "secret123",
+                "displayName": "管理员",
+                "agree": True,
+            },
+        )
+        admin = {"Authorization": f"Bearer {registered.json()['data']['token']}"}
+        context = client.get("/api/workspace/context", headers=admin).json()["data"]
+        line = context["lines"][0]
+        profession = context["professions"][0]
+        project = context["projects"][0]
+        scope = {"lineId": line["id"], "professionId": profession["id"], "projectId": project["id"]}
+        subitem = client.post(
+            "/api/workspace/debug-items",
+            headers=admin,
+            json={"scope": scope, "category": "debug_subitems", "name": "模板测试子项"},
+        )
+        assert subitem.status_code == 200, subitem.text
+
+        def create_config(config_code: str) -> dict[str, object]:
+            response = client.post(
+                "/api/workspace/configs",
+                headers=admin,
+                json={
+                    "scope": scope,
+                    "configCode": config_code,
+                    "deviceType": "垂梯",
+                    "debugSubitemId": subitem.json()["data"]["id"],
+                    "steps": [{"description": "执行测试", "results": [{"description": "结果正常"}]}],
+                },
+            )
+            assert response.status_code == 200, response.text
+            return response.json()["data"]
+
+        create_config("T19-垂梯-状态反馈")
+        disabled_config = create_config("T19-垂梯-归首控制")
+        disabled = client.post(
+            f"/api/workspace/configs/{disabled_config['id']}/status",
+            headers=admin,
+            params={"enabled": False},
+        )
+        assert disabled.status_code == 200, disabled.text
+
+        response = client.get(
+            "/api/workspace/template",
+            headers=admin,
+            params={"lineId": line["id"], "projectId": project["id"]},
+        )
+        assert response.status_code == 200, response.text
+        workbook = xlrd.open_workbook(file_contents=response.content)
+        assert workbook.sheet_names() == ["数据导入模板", "填写说明", "联调配置编码清单"]
+        sheet = workbook.sheet_by_name("联调配置编码清单")
+        assert sheet.cell_value(0, 2) == "联调配置编码"
+        assert sheet.cell_value(1, 2) == "T19-垂梯-归首控制"
+        assert sheet.cell_value(1, 3) == "模板测试子项"
+        assert sheet.cell_value(1, 7) == "停用"
+        assert sheet.cell_value(2, 2) == "T19-垂梯-状态反馈"
+
+
+def test_workspace_project_list_uses_numeric_sort_order(tmp_path: Path) -> None:
+    with TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "project-order.sqlite3"))) as client:
+        registered = client.post(
+            "/api/auth/register",
+            json={
+                "username": "admin",
+                "password": "secret123",
+                "confirmPassword": "secret123",
+                "displayName": "管理员",
+                "agree": True,
+            },
+        )
+        admin = {"Authorization": f"Bearer {registered.json()['data']['token']}"}
+        context = client.get("/api/workspace/context", headers=admin).json()["data"]
+        line = context["lines"][0]
+        profession = context["professions"][0]
+        for code, order in (("T11", 11), ("T2", 2)):
+            response = client.post(
+                "/api/workspace/projects",
+                headers=admin,
+                json={
+                    "lineId": line["id"],
+                    "professionId": profession["id"],
+                    "code": code,
+                    "name": code,
+                    "sortOrder": order,
+                },
+            )
+            assert response.status_code == 200, response.text
+        response = client.get("/api/workspace/projects", headers=admin, params={"lineId": line["id"]})
+        assert response.status_code == 200, response.text
+        projects = response.json()["data"]
+        codes = [item["code"] for item in projects]
+        assert codes.index("T2") < codes.index("T11")
+
+
+def test_workspace_stations_and_copy_candidates_are_line_scoped_and_single_request(tmp_path: Path) -> None:
+    with TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "stations-copy.sqlite3"))) as client:
+        registered = client.post(
+            "/api/auth/register",
+            json={
+                "username": "admin",
+                "password": "secret123",
+                "confirmPassword": "secret123",
+                "displayName": "管理员",
+                "agree": True,
+            },
+        )
+        admin = {"Authorization": f"Bearer {registered.json()['data']['token']}"}
+        context = client.get("/api/workspace/context", headers=admin).json()["data"]
+        line = context["lines"][0]
+        profession = context["professions"][0]
+        project = context["projects"][0]
+        scope = {"lineId": line["id"], "professionId": profession["id"], "projectId": project["id"]}
+        station = client.post(
+            "/api/workspace/catalog",
+            headers=admin,
+            json={"scope": scope, "category": "stations", "name": "测试站", "code": "TEST", "sortOrder": 1},
+        )
+        assert station.status_code == 200, station.text
+        station_list = client.get("/api/workspace/stations", headers=admin, params={"lineId": line["id"]})
+        assert station_list.status_code == 200, station_list.text
+        assert [item["name"] for item in station_list.json()["data"]] == ["测试站"]
+
+        subitem = client.post(
+            "/api/workspace/debug-items",
+            headers=admin,
+            json={"scope": scope, "category": "debug_subitems", "name": "复制测试"},
+        )
+        assert subitem.status_code == 200, subitem.text
+        config = client.post(
+            "/api/workspace/configs",
+            headers=admin,
+            json={
+                "scope": scope,
+                "configCode": "复制测试编码",
+                "debugSubitemId": subitem.json()["data"]["id"],
+                "steps": [{"description": "执行", "results": [{"description": "完成"}]}],
+            },
+        )
+        assert config.status_code == 200, config.text
+        candidates = client.get(
+            "/api/workspace/copy-candidates",
+            headers=admin,
+            params=scope,
+        )
+        assert candidates.status_code == 200, candidates.text
+        assert candidates.json()["data"] == []
 
 
 def test_catalog_stations_are_isolated_by_line(tmp_path: Path) -> None:
@@ -1210,11 +1372,22 @@ def test_workspace_catalog_is_scoped_and_independent(tmp_path: Path) -> None:
             "professionId": profession["id"],
             "projectId": project["id"],
         }
-        assert (
-            client.get(
-                "/api/workspace/catalog",
-                headers=admin,
-                params={**other_scope, "category": "stations"},
-            ).status_code
-            == 404
+        other_line_stations = client.get(
+            "/api/workspace/catalog",
+            headers=admin,
+            params={**other_scope, "category": "stations"},
         )
+        assert other_line_stations.status_code == 200
+        assert other_line_stations.json()["data"] == []
+        no_project_stations = client.get(
+            "/api/workspace/catalog",
+            headers=admin,
+            params={
+                "lineId": other_line["id"],
+                "professionId": profession["id"],
+                "projectId": 999999,
+                "category": "stations",
+            },
+        )
+        assert no_project_stations.status_code == 200
+        assert no_project_stations.json()["data"] == []

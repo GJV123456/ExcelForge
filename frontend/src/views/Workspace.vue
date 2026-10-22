@@ -205,8 +205,11 @@ const downloadHistory = async (item) => {
 
 const downloadInputTemplate = async () => {
   try {
-    downloadResponseBlob(await downloadWorkspaceTemplate())
-    ElMessage.success('测试数据导入模板已下载')
+    const scope = selectedProject.value && workspace.selectedLineId
+      ? { lineId: workspace.selectedLineId, projectId: selectedProject.value.id }
+      : undefined
+    downloadResponseBlob(await downloadWorkspaceTemplate(scope))
+    ElMessage.success(scope ? '测试数据模板及当前项目联调配置编码清单已下载' : '测试数据导入模板已下载')
   } catch (error) {
     ElMessage.error(await getApiErrorMessage(error))
   }

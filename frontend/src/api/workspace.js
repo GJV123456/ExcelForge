@@ -9,9 +9,11 @@ export const batchCopyWorkspaceConfigs = (data) => request.post('/api/workspace/
 export const importWorkspaceConfigs = (data) => request.post('/api/workspace/configs/import', data)
 export const previewWorkspaceConfigImport = (data) => request.post('/api/workspace/configs/import/preview', data)
 export const setWorkspaceConfigStatus = (id, enabled) => request.post(`/api/workspace/configs/${id}/status`, null, { params: { enabled } })
-export const downloadWorkspaceTemplate = () => request.get('/api/workspace/template', { responseType: 'blob' })
+export const downloadWorkspaceTemplate = (params) => request.get('/api/workspace/template', { params, responseType: 'blob' })
 export const downloadWorkspaceConfigTemplate = (params) => request.get('/api/workspace/config-template', { params, responseType: 'blob' })
 export const getWorkspaceCatalog = (params) => request.get('/api/workspace/catalog', { params })
+export const getWorkspaceStations = (params) => request.get('/api/workspace/stations', { params })
+export const getWorkspaceConfigCopyCandidates = (params) => request.get('/api/workspace/copy-candidates', { params })
 export const saveWorkspaceCatalog = (id, data) => id
   ? request.put(`/api/workspace/catalog/${id}`, data)
   : request.post('/api/workspace/catalog', data)
