@@ -52,7 +52,12 @@ const lineProjects = (lineId) => managedProjects.value
   .filter((item) => String(item.lineId) === String(lineId))
   .sort(compareSortOrder)
 const lineForm = reactive({ id: null, code: '', name: '', sortOrder: 1, isEnabled: true })
-const professionForm = reactive({ id: null, code: '', name: '', sortOrder: 1, isEnabled: true })
+const professionForm = reactive({ id: null, code: '', name: '', parentId: null, sortOrder: 1, isEnabled: true })
+const professionTree = computed(() => {
+  const children = new Map()
+  context.value.professions.forEach((item) => children.set(item.parentId || '', [...(children.get(item.parentId || '') || []), item]))
+  return (children.get('') || []).map((item) => ({ ...item, children: children.get(item.id) || [] }))
+})
 const projectForm = reactive({ id: null, lineId: null, professionId: null, code: '', name: '', description: '', engineCode: '', sortOrder: 1, isEnabled: true })
 const groupedUsers = computed(() => {
   const groups = new Map()
@@ -168,6 +173,7 @@ const saveProfession = async () => {
         rows.push({
           code: line.slice(0, separator).trim(),
           name: line.slice(separator + 1).trim(),
+          parentId: professionForm.parentId || null,
           sortOrder: Number(professionForm.sortOrder) + index,
           isEnabled: professionForm.isEnabled,
         })
@@ -180,7 +186,7 @@ const saveProfession = async () => {
       ElMessage.success(`已新增 ${rows.length} 个专业`)
     }
     entityDialogVisible.value = false
-    Object.assign(professionForm, { id: null, code: '', name: '', sortOrder: 1, isEnabled: true })
+    Object.assign(professionForm, { id: null, code: '', name: '', parentId: null, sortOrder: 1, isEnabled: true })
     professionBatchText.value = ''
     await load()
   } catch (error) { ElMessage.error(await errorMessage(error, '专业保存失败')) } finally { saving.value = false }
@@ -228,7 +234,7 @@ const openCreateEntity = (type, copyProject = false) => {
   if (type === 'line') Object.assign(lineForm, { id: null, code: '', name: '', sortOrder: context.value.lines.length + 1, isEnabled: true })
   if (type === 'profession') {
     Object.assign(professionForm, {
-      id: null, code: '', name: '',
+      id: null, code: '', name: '', parentId: null,
       sortOrder: Math.max(0, ...context.value.professions.map((item) => Number(item.sortOrder) || 0)) + 1,
       isEnabled: true,
     })
@@ -242,7 +248,7 @@ const openCreateEntity = (type, copyProject = false) => {
   entityDialogVisible.value = true
 }
 const editLine = (item) => { entityType.value = 'line'; Object.assign(lineForm, { id: item.id, code: item.code, name: item.name, sortOrder: item.sortOrder, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
-const editProfession = (item) => { entityType.value = 'profession'; professionBatchText.value = ''; Object.assign(professionForm, { id: item.id, code: item.code, name: item.name, sortOrder: item.sortOrder, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
+const editProfession = (item) => { entityType.value = 'profession'; professionBatchText.value = ''; Object.assign(professionForm, { id: item.id, code: item.code, name: item.name, parentId: item.parentId || null, sortOrder: item.sortOrder, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
 const editProject = (item) => { entityType.value = 'project'; Object.assign(projectForm, { id: item.id, lineId: item.lineId, professionId: item.professionId, code: item.code, name: item.name, description: item.description, engineCode: item.engineCode, sortOrder: item.sortOrder, isEnabled: item.isEnabled }); entityDialogVisible.value = true }
 onMounted(load)
 </script>
@@ -267,7 +273,7 @@ onMounted(load)
       </el-tab-pane>
       <el-tab-pane label="专业管理" name="professions">
         <el-alert class="admin-notice" type="info" :closable="false" show-icon title="专业目录目前由所有线路共用；新增、修改或停用会影响全系统专业选择。" />
-        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>专业列表</strong><span class="table-hint">共 {{ context.professions.length }} 个专业</span></div><el-button v-if="isSuperAdmin || isLineAdmin" type="primary" :icon="Plus" @click="openCreateEntity('profession')">新增专业</el-button></div></template><el-table v-loading="loading || saving" :data="[...context.professions].sort(compareSortOrder)" stripe empty-text="暂无专业"><el-table-column prop="name" label="专业名称" min-width="180" /><el-table-column prop="code" label="专业编码" min-width="120" /><el-table-column prop="sortOrder" label="排序" width="90" /><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column v-if="isSuperAdmin || isLineAdmin" label="操作" width="180" fixed="right" align="center"><template #default="{ row }"><div class="entity-row-actions"><el-button text type="primary" :icon="EditPen" @click="editProfession(row)">编辑</el-button><el-switch :model-value="row.isEnabled" inline-prompt active-text="启用" inactive-text="停用" @change="toggleProfession(row, $event)" /></div></template></el-table-column></el-table></el-card>
+        <el-card shadow="never" class="section-card admin-card"><template #header><div class="table-header"><div><strong>专业列表</strong><span class="table-hint">共 {{ context.professions.length }} 个专业</span></div><el-button v-if="isSuperAdmin || isLineAdmin" type="primary" :icon="Plus" @click="openCreateEntity('profession')">新增专业</el-button></div></template><el-table v-loading="loading || saving" :data="professionTree" row-key="id" :tree-props="{ children: 'children' }" stripe empty-text="暂无专业"><el-table-column prop="name" label="专业名称" min-width="180" tree-node /><el-table-column prop="code" label="专业编码" min-width="120" /><el-table-column prop="sortOrder" label="排序" width="90" /><el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column v-if="isSuperAdmin || isLineAdmin" label="操作" width="180" fixed="right" align="center"><template #default="{ row }"><div class="entity-row-actions"><el-button text type="primary" :icon="EditPen" @click="editProfession(row)">编辑</el-button><el-switch :model-value="row.isEnabled" inline-prompt active-text="启用" inactive-text="停用" @change="toggleProfession(row, $event)" /></div></template></el-table-column></el-table></el-card>
       </el-tab-pane>
       <el-tab-pane label="联调项目管理" name="projects">
         <el-alert class="admin-notice" type="info" :closable="false" show-icon title="联调项目按线路管理；停用后会从工作范围选择器中隐藏，但仍可在此列表查看并重新启用。" />
@@ -292,7 +298,7 @@ onMounted(load)
   <el-dialog v-model="entityDialogVisible" :title="entityDialogTitle" width="min(620px, calc(100vw - 28px))" destroy-on-close>
     <el-form label-position="top">
       <template v-if="entityType === 'line'"><div class="admin-grid admin-grid-two"><el-form-item label="线路编码" required><el-input v-model="lineForm.code" placeholder="例如 9" /></el-form-item><el-form-item label="线路名称" required><el-input v-model="lineForm.name" placeholder="例如 9号线" /></el-form-item><el-form-item label="排序" required><el-input-number v-model="lineForm.sortOrder" :min="1" :precision="0" controls-position="right" /></el-form-item><el-form-item label="状态"><el-switch v-model="lineForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></div></template>
-      <template v-else-if="entityType === 'profession'"><template v-if="professionForm.id != null"><div class="admin-grid admin-grid-two"><el-form-item label="专业编码" required><el-input v-model="professionForm.code" placeholder="例如 ZDH" /></el-form-item><el-form-item label="专业名称" required><el-input v-model="professionForm.name" placeholder="例如 自动化" /></el-form-item><el-form-item label="排序" required><el-input-number v-model="professionForm.sortOrder" :min="1" :precision="0" controls-position="right" /></el-form-item><el-form-item label="状态"><el-switch v-model="professionForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></div></template><template v-else><el-form-item label="专业编码、专业名称" required><el-input v-model="professionBatchText" type="textarea" :rows="6" resize="vertical" placeholder="每行填写一条，格式：专业编码,专业名称&#10;例如：&#10;ZDH,自动化&#10;TX,通信&#10;FSD,风水电" /></el-form-item><div class="batch-entry-footer"><el-form-item label="起始排序" required><el-input-number v-model="professionForm.sortOrder" :min="1" :precision="0" controls-position="right" /></el-form-item><el-form-item label="新增后状态"><el-switch v-model="professionForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item><span class="batch-entry-hint">每行新增一条，排序号按输入顺序递增。</span></div></template></template>
+      <template v-else-if="entityType === 'profession'"><template v-if="professionForm.id != null"><div class="admin-grid admin-grid-two"><el-form-item label="专业编码" required><el-input v-model="professionForm.code" placeholder="例如 ZDH" /></el-form-item><el-form-item label="专业名称" required><el-input v-model="professionForm.name" placeholder="例如 自动化" /></el-form-item><el-form-item label="父级专业"><el-select v-model="professionForm.parentId" clearable placeholder="不选则作为可选父专业"><el-option v-for="item in context.professions.filter((row) => !row.parentId && row.id !== professionForm.id)" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item><el-form-item label="排序" required><el-input-number v-model="professionForm.sortOrder" :min="1" :precision="0" controls-position="right" /></el-form-item><el-form-item label="状态"><el-switch v-model="professionForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></div></template><template v-else><el-form-item label="专业编码、专业名称" required><el-input v-model="professionBatchText" type="textarea" :rows="6" resize="vertical" placeholder="每行填写一条，格式：专业编码,专业名称&#10;例如：&#10;ZDH,自动化&#10;TX,通信&#10;FSD,风水电" /></el-form-item><div class="admin-grid admin-grid-two"><el-form-item label="父级专业"><el-select v-model="professionForm.parentId" clearable placeholder="不选则作为可选父专业"><el-option v-for="item in enabledProfessions.filter((row) => !row.parentId)" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item><el-form-item label="起始排序"><el-input-number v-model="professionForm.sortOrder" :min="1" :precision="0" controls-position="right" /></el-form-item><el-form-item label="新增后状态"><el-switch v-model="professionForm.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></div><span class="batch-entry-hint">每行新增一条，排序号按输入顺序递增。</span></template></template>
       <template v-else>
         <el-alert v-if="editingProject" class="admin-notice" type="info" :closable="false" show-icon title="项目按线路归属；修改项目编码只影响后续新增配置，已有业务显示 ID 保持不变。" />
         <div v-if="!editingProject" class="admin-grid admin-grid-two">

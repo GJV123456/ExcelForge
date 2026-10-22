@@ -31,12 +31,24 @@ const categoryMeta = computed(() => ({
   stations: { title: '站点信息', description: '维护当前线路共享的站点信息。', name: '站点名称', example: '例如：嘉庚体育馆站' },
 }[props.category] || {}))
 const form = reactive({ code: '', name: '', description: '', sortOrder: 1, isEnabled: true })
+const parentId = ref(null)
 const enabledCount = computed(() => items.value.filter((item) => item.isEnabled).length)
 const catalogProjectId = computed(() => workspace.selectedProjectId || workspace.projects[0]?.id || 1)
 const sortCatalogItems = (rows) => [...rows].sort((left, right) =>
   (Number(left.sortOrder) || 0) - (Number(right.sortOrder) || 0)
   || String(left.name || '').localeCompare(String(right.name || ''), 'zh-CN', { numeric: true })
   || String(left.id).localeCompare(String(right.id)))
+const hierarchicalItems = computed(() => {
+  if (props.category !== 'disciplines') return items.value
+  const byParent = new Map()
+  const ids = new Set(items.value.map((item) => String(item.id)))
+  for (const item of items.value) {
+    const key = item.parentId || ''
+    byParent.set(key, [...(byParent.get(key) || []), item])
+  }
+  const roots = items.value.filter((item) => !item.parentId || !ids.has(String(item.parentId)))
+  return roots.map((item) => ({ ...item, children: byParent.get(item.id) || [] }))
+})
 const isLineSharedCategory = computed(() => ['disciplines', 'stations'].includes(props.category))
 const hasCatalogScope = computed(() => props.category === 'disciplines'
   ? Boolean(workspace.selectedLineId && workspace.selectedProfessionId)
@@ -57,12 +69,14 @@ const load = async () => {
 const openCreate = () => {
   editingId.value = ''
   batchNames.value = ''
+  parentId.value = null
   Object.assign(form, { code: '', name: '', description: '', sortOrder: Math.max(0, ...items.value.map((row) => row.sortOrder || 0)) + 1, isEnabled: true })
   dialogVisible.value = true
 }
 const openEdit = (row) => {
   editingId.value = row.id
   batchNames.value = ''
+  parentId.value = row.parentId || null
   Object.assign(form, { code: row.code || '', name: row.name, description: row.description || '', sortOrder: row.sortOrder, isEnabled: row.isEnabled })
   dialogVisible.value = true
 }
@@ -82,7 +96,7 @@ const save = async () => {
     } else {
       for (const [index, name] of names.entries()) {
         await saveWorkspaceCatalog(editingId.value || null, { scope: scopePayload(), category: props.category,
-          code: editingId.value ? (form.code.trim() || name) : name, name, description: form.description.trim(), sortOrder: editingId.value ? form.sortOrder : form.sortOrder + index, isEnabled: form.isEnabled })
+          code: editingId.value ? (form.code.trim() || name) : name, name, parentId: props.category === 'disciplines' ? parentId.value : null, description: form.description.trim(), sortOrder: editingId.value ? form.sortOrder : form.sortOrder + index, isEnabled: form.isEnabled })
         savedCount += 1
         if (editingId.value) break
       }
@@ -133,16 +147,16 @@ watch(() => [workspace.selectedLineId, workspace.selectedProfessionId, workspace
       <div v-if="canEdit" class="catalog-actions"><el-button v-if="['disciplines', 'stations'].includes(props.category)" plain @click="copyDialogVisible = true">复制其他线路{{ props.category === 'stations' ? '站点' : '/专业' }}</el-button><el-button type="primary" :icon="Plus" @click="openCreate">新增{{ categoryMeta.title }}</el-button></div>
     </div>
     <div class="catalog-toolbar"><span>当前范围：{{ workspace.selectedLine?.name }}<template v-if="!isLineSharedCategory"> / {{ workspace.selectedProfession?.name }} / {{ workspace.selectedProject?.name }}</template></span><el-button plain :icon="Refresh" :loading="loading" @click="load">刷新</el-button></div>
-    <el-table :data="items" stripe class="catalog-table" empty-text="当前范围暂无配置">
+    <el-table :data="hierarchicalItems" row-key="id" :tree-props="{ children: 'children' }" stripe class="catalog-table" empty-text="当前范围暂无配置">
       <el-table-column prop="sortOrder" label="排序" width="82" align="center" />
       <el-table-column label="编码" min-width="150"><template #default="{ row }">{{ row.code || '—' }}</template></el-table-column>
-      <el-table-column prop="name" :label="categoryMeta.name" min-width="180" />
+      <el-table-column prop="name" :label="categoryMeta.name" min-width="180" tree-node />
       <el-table-column prop="description" label="说明" min-width="240" show-overflow-tooltip />
       <el-table-column label="状态" width="100" align="center"><template #default="{ row }"><el-tag :type="row.isEnabled ? 'success' : 'info'" effect="light" round>{{ row.isEnabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
       <el-table-column v-if="canEdit" label="操作" width="170" fixed="right" align="center"><template #default="{ row }"><div class="catalog-row-actions"><el-button text type="primary" :icon="EditPen" @click="openEdit(row)">编辑</el-button><el-switch :model-value="row.isEnabled" inline-prompt active-text="启用" inactive-text="停用" @change="(enabled) => toggleStatus(row, enabled)" /></div></template></el-table-column>
     </el-table>
     <el-dialog v-model="dialogVisible" :title="editingId ? `编辑${categoryMeta.title}` : `新增${categoryMeta.title}`" width="min(620px, calc(100vw - 32px))" destroy-on-close>
-      <el-form label-position="top"><div class="catalog-form-grid"><el-form-item v-if="props.category === 'stations' && !editingId" class="catalog-form-wide" label="站点名称（每行一项，可一次新增多个）" required><el-input v-model="batchNames" type="textarea" :rows="6" :placeholder="`${categoryMeta.example}\n例如：站厅层\n站台层`" /></el-form-item><el-form-item v-else label="名称" required><el-input v-model="form.name" :placeholder="categoryMeta.example" /></el-form-item><el-form-item v-if="!(props.category === 'stations' && !editingId)" label="编码"><el-input v-model="form.code" placeholder="可选" /></el-form-item><el-form-item label="排序"><el-input-number v-model="form.sortOrder" :min="1" controls-position="right" /></el-form-item><el-form-item label="状态"><el-switch v-model="form.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item><el-form-item class="catalog-form-wide" label="说明"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item></div></el-form>
+      <el-form label-position="top"><div class="catalog-form-grid"><el-form-item v-if="props.category === 'stations' && !editingId" class="catalog-form-wide" label="站点名称（每行一项，可一次新增多个）" required><el-input v-model="batchNames" type="textarea" :rows="6" :placeholder="`${categoryMeta.example}\n例如：站厅层\n站台层`" /></el-form-item><el-form-item v-else label="名称" required><el-input v-model="form.name" :placeholder="categoryMeta.example" /></el-form-item><el-form-item v-if="!(props.category === 'stations' && !editingId)" label="编码"><el-input v-model="form.code" placeholder="可选" /></el-form-item><el-form-item v-if="props.category === 'disciplines'" label="父级责任专业"><el-select v-model="parentId" clearable placeholder="不选则作为可选父专业"><el-option v-for="item in items.filter((row) => !row.parentId && row.id !== editingId)" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item><el-form-item label="排序"><el-input-number v-model="form.sortOrder" :min="1" controls-position="right" /></el-form-item><el-form-item label="状态"><el-switch v-model="form.isEnabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item><el-form-item class="catalog-form-wide" label="说明"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item></div></el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="copyDialogVisible" :title="`复制${categoryMeta.title}`" width="min(620px, calc(100vw - 32px))"><p>复制会在当前线路建立独立目录，不会修改来源线路或专业。</p><el-select v-model="copySourceProjectId" filterable placeholder="选择来源线路、专业和项目" @change="copyFromProject"><el-option v-for="item in workspace.projects.filter((project) => project.isEnabled !== false && (String(project.lineId) !== String(workspace.selectedLineId) || String(project.professionId) !== String(workspace.selectedProfessionId)))" :key="item.id" :label="`${workspace.lines.find((line) => String(line.id) === String(item.lineId))?.name || ''} / ${workspace.professions.find((profession) => String(profession.id) === String(item.professionId))?.name || ''} / ${item.code}`" :value="item.id" /></el-select><el-table v-if="copySourceItems.length" :data="copySourceItems" stripe style="margin-top:14px"><el-table-column prop="name" :label="`将复制的${categoryMeta.title}`" /><el-table-column prop="code" label="编码" width="140" /></el-table><template #footer><el-button @click="copyDialogVisible = false">取消</el-button><el-button type="primary" :loading="copying" @click="copyCatalogItems">复制到当前线路</el-button></template></el-dialog>

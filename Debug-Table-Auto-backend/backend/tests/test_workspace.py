@@ -836,6 +836,106 @@ def test_line_admin_can_view_disabled_projects_and_edit_project_scope(tmp_path: 
         assert updated.json()["data"]["isEnabled"] is True
 
 
+def test_cross_line_debug_catalog_is_read_only_and_profession_groups_are_supported(tmp_path: Path) -> None:
+    with TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "workspace.sqlite3"))) as client:
+        registered = client.post(
+            "/api/auth/register",
+            json={
+                "username": "admin",
+                "password": "secret123",
+                "confirmPassword": "secret123",
+                "displayName": "管理员",
+                "agree": True,
+            },
+        )
+        admin = {"Authorization": f"Bearer {registered.json()['data']['token']}"}
+        context = client.get("/api/workspace/context", headers=admin).json()["data"]
+        line, profession = context["lines"][0], context["professions"][0]
+        project = context["projects"][0]
+        second_line = client.post(
+            "/api/workspace/lines", headers=admin, json={"code": "6", "name": "6号线"}
+        ).json()["data"]
+        second_project = client.post(
+            "/api/workspace/projects",
+            headers=admin,
+            json={
+                "lineId": second_line["id"],
+                "professionId": profession["id"],
+                "code": "T19",
+                "name": "FAS系统测试",
+            },
+        ).json()["data"]
+        second_scope = {
+            "lineId": second_line["id"],
+            "professionId": profession["id"],
+            "projectId": second_project["id"],
+        }
+        created = client.post(
+            "/api/workspace/debug-items",
+            headers=admin,
+            json={**{"scope": second_scope}, "category": "debug_subitems", "name": "外部接口测试"},
+        )
+        assert created.status_code == 200, created.text
+        line_admin_response = client.post(
+            "/api/workspace/users",
+            headers=admin,
+            json={
+                "username": "line-admin",
+                "password": "secret123",
+                "displayName": "线路管理员",
+                "role": "line_admin",
+                "lineId": line["id"],
+            },
+        )
+        assert line_admin_response.status_code == 200, line_admin_response.text
+        line_admin = _login(client, "line-admin")
+        read = client.get(
+            "/api/workspace/debug-items",
+            headers=line_admin,
+            params={**second_scope, "category": "debug_subitems", "includeDisabled": True},
+        )
+        assert read.status_code == 200, read.text
+        assert read.json()["data"][0]["name"] == "外部接口测试"
+        denied_write = client.post(
+            "/api/workspace/debug-items",
+            headers=line_admin,
+            json={"scope": second_scope, "category": "debug_subitems", "name": "无权新增"},
+        )
+        assert denied_write.status_code == 403
+
+        child = client.post(
+            "/api/workspace/professions",
+            headers=admin,
+            json={"code": "FAS", "name": "FAS", "parentId": profession["id"]},
+        )
+        assert child.status_code == 200, child.text
+        assert child.json()["data"]["parentId"] == profession["id"]
+        catalog_scope = {
+            "lineId": line["id"],
+            "professionId": profession["id"],
+            "projectId": project["id"],
+        }
+        parent_catalog = client.post(
+            "/api/workspace/catalog",
+            headers=admin,
+            json={"scope": catalog_scope, "category": "disciplines", "code": "AUTO", "name": "自动化"},
+        )
+        assert parent_catalog.status_code == 200, parent_catalog.text
+        child_catalog = client.post(
+            "/api/workspace/catalog",
+            headers=admin,
+            json={
+                "scope": catalog_scope,
+                "category": "disciplines",
+                "code": "FAS",
+                "name": "FAS",
+                "parentId": parent_catalog.json()["data"]["id"],
+            },
+        )
+        assert child_catalog.status_code == 200, child_catalog.text
+        assert child_catalog.json()["data"]["parentId"] == parent_catalog.json()["data"]["id"]
+
+
 def test_workspace_config_import_groups_results_into_steps(tmp_path: Path) -> None:
     with TestClient(create_app(Settings(mode="formal", database_path=tmp_path / "import.sqlite3"))) as client:
         registered = client.post(

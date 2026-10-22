@@ -249,7 +249,7 @@ watch(() => [dialogVisible.value, workspace.selectedLineId, form.professionId, f
         <div><h1>联调表单配置管理</h1><p>管理当前线路、专业和联调项目下的配置编码、操作步骤和预期结果。</p></div>
       </div>
       <div class="config-toolbar">
-        <div class="config-toolbar-group"><el-input v-model="filter" clearable placeholder="搜索配置编码" /><el-button :icon="Refresh" @click="load">刷新</el-button></div>
+        <div class="config-toolbar-group"><el-input v-model="filter" clearable placeholder="搜索规则编号" /><el-button :icon="Refresh" @click="load">刷新</el-button></div>
         <div class="config-toolbar-group config-toolbar-actions">
           <el-dropdown @command="downloadTemplateChoice"><el-button :icon="Download">模板下载<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="data">测试数据导入模板</el-dropdown-item><el-dropdown-item command="config">联调配置规范模板（含样例）</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
           <label v-if="canEdit" class="upload-config-button"><input type="file" accept=".xlsx,.xls,.csv" @change="importConfigFile" />导入配置规范表</label>
@@ -272,7 +272,7 @@ watch(() => [dialogVisible.value, workspace.selectedLineId, form.professionId, f
         <!-- <el-alert type="info" :closable="false" show-icon title="联调配置编码在当前线路、专业和项目下必须唯一；业务显示 ID 由系统自动生成且不可修改。导入时每行填写一个输出结果，用步骤序号把多个结果归到同一个操作步骤。" /> -->
         <div v-loading="loading" class="config-workbench">
           <aside class="config-sidebar">
-            <div class="config-sidebar-heading"><strong>联调配置编码</strong><span>{{ visibleConfigs.length }} 条</span></div>
+            <div class="config-sidebar-heading"><strong>联调规则编号</strong><span>{{ visibleConfigs.length }} 条</span></div>
             <div class="config-menu">
               <button v-for="item in visibleConfigs" :key="item.id" type="button" class="config-menu-item" :class="{ active: selectedConfig?.id === item.id }" @click="selectedConfigId = item.id">
                 <span class="config-menu-title">{{ item.configCode }}</span>

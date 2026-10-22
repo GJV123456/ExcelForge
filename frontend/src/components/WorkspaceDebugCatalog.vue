@@ -151,10 +151,10 @@ const load = async () => {
   loading.value = true
   try {
     const base = scope.value
-    const parents = (await getWorkspaceDebugItems({ ...base, category: 'debug_subitems', includeDisabled: true })).data?.data || []
+    const parents = (await getWorkspaceDebugItems({ ...base, category: 'debug_subitems', includeDisabled: canEdit.value })).data?.data || []
     if (currentRequestId !== requestId) return
     const childLists = await Promise.all(parents.map(async (item) => {
-      const response = await getWorkspaceDebugItems({ ...base, category: 'debug_divisions', parentId: item.id, includeDisabled: true })
+      const response = await getWorkspaceDebugItems({ ...base, category: 'debug_divisions', parentId: item.id, includeDisabled: canEdit.value })
       return [item.id, response.data?.data || []]
     }))
     if (currentRequestId !== requestId) return

@@ -31,6 +31,7 @@ class LineWriteRequest(ApiModel):
 class ProfessionWriteRequest(ApiModel):
     code: Text
     name: Text
+    parent_id: int | None = Field(default=None, alias="parentId", gt=0)
     sort_order: int = Field(default=1, alias="sortOrder", gt=0)
     is_enabled: bool = Field(default=True, alias="isEnabled")
 
@@ -115,6 +116,7 @@ class WorkspaceCatalogWriteRequest(ApiModel):
     category: Literal["equipment_types", "disciplines", "stations"]
     code: str = Field(default="", max_length=100)
     name: Text
+    parent_id: str | None = Field(default=None, alias="parentId", max_length=64)
     description: str = Field(default="", max_length=2000)
     sort_order: int = Field(default=1, alias="sortOrder", gt=0)
     is_enabled: bool = Field(default=True, alias="isEnabled")

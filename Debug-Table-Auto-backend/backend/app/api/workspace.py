@@ -297,8 +297,8 @@ def list_debug_items(
 ) -> dict[str, object]:
     user = _current_user(request)
     scope = ScopeSelection(lineId=line_id, professionId=profession_id, projectId=project_id)
-    if include_disabled:
-        _require_edit_scope(user, scope)
+    if include_disabled and not _can_edit_scope(user, scope):
+        include_disabled = False
     data = _repository(request).list_debug_items(scope, category, parent_id, include_disabled)
     return {"data": data, "meta": {"count": len(data)}}
 

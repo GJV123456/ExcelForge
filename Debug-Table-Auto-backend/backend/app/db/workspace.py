@@ -75,6 +75,14 @@ class WorkspaceRepository:
                     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
                 )
             """)
+            profession_columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(workspace_professions)")
+            }
+            if "parent_id" not in profession_columns:
+                connection.execute(
+                    "ALTER TABLE workspace_professions ADD COLUMN parent_id "
+                    "INTEGER REFERENCES workspace_professions(id) ON DELETE RESTRICT"
+                )
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS workspace_projects (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,6 +145,9 @@ class WorkspaceRepository:
                     UNIQUE (category, line_id, profession_id, project_id, name)
                 )
             """)
+            catalog_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(workspace_catalog_items)")}
+            if "parent_id" not in catalog_columns:
+                connection.execute("ALTER TABLE workspace_catalog_items ADD COLUMN parent_id TEXT")
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS workspace_debug_items (
                     id TEXT PRIMARY KEY,
@@ -428,11 +439,12 @@ class WorkspaceRepository:
                 if shared_by_line:
                     duplicate_query = (
                         "SELECT id FROM workspace_catalog_items WHERE category = ? AND line_id = ? "
-                        "AND (name = ? COLLATE NOCASE OR (? <> '' AND code = ? COLLATE NOCASE))"
+                        "AND parent_id IS ? AND (name = ? COLLATE NOCASE OR (? <> '' AND code = ? COLLATE NOCASE))"
                     )
                     duplicate_params: list[Any] = [
                         payload.category,
                         payload.scope.line_id,
+                        payload.parent_id,
                         payload.name,
                         payload.code,
                         payload.code,
@@ -446,13 +458,25 @@ class WorkspaceRepository:
                             "WORKSPACE_CATALOG_EXISTS",
                             status_code=409,
                         )
+                    if payload.category == "disciplines" and payload.parent_id:
+                        parent = connection.execute(
+                            "SELECT parent_id FROM workspace_catalog_items WHERE id = ? "
+                            "AND category = 'disciplines' AND line_id = ?",
+                            (payload.parent_id, payload.scope.line_id),
+                        ).fetchone()
+                        if parent is None or parent["parent_id"] is not None or payload.parent_id == item_id:
+                            raise BusinessError(
+                                "父责任专业不存在或不能作为自身的父级",
+                                "WORKSPACE_CATALOG_PARENT_INVALID",
+                                status_code=422,
+                            )
                 if item_id is None:
                     item_id = uuid4().hex
                     connection.execute(
                         """INSERT INTO workspace_catalog_items
                         (id, category, line_id, profession_id, project_id, code, name,
-                         description, sort_order, is_enabled)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                         description, sort_order, is_enabled, parent_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             item_id,
                             payload.category,
@@ -464,6 +488,7 @@ class WorkspaceRepository:
                             payload.description,
                             payload.sort_order,
                             int(payload.is_enabled),
+                            payload.parent_id,
                         ),
                     )
                 else:
@@ -483,9 +508,10 @@ class WorkspaceRepository:
                         update_params.extend([payload.scope.profession_id, payload.scope.project_id])
                     cursor = connection.execute(
                         f"""UPDATE workspace_catalog_items SET code = ?, name = ?, description = ?,
-                        sort_order = ?, is_enabled = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                        sort_order = ?, is_enabled = ?, parent_id = ?,
+                        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                         WHERE {update_scope}""",
-                        update_params,
+                        [*update_params[:5], payload.parent_id, *update_params[5:]],
                     )
                     if cursor.rowcount == 0:
                         raise BusinessError(
@@ -565,6 +591,7 @@ class WorkspaceRepository:
             "projectId": int(row["project_id"]),
             "code": row["code"],
             "name": row["name"],
+            "parentId": row["parent_id"],
             "description": row["description"],
             "sortOrder": int(row["sort_order"]),
             "isEnabled": bool(row["is_enabled"]),
@@ -609,6 +636,39 @@ class WorkspaceRepository:
             "UPDATE workspace_projects SET line_id = COALESCE(line_id, ?) WHERE line_id IS NULL",
             (int(line[0]) if line else 1,),
         )
+        discipline_groups = {
+            "自动化": ("BAS", "FAS", "ACS", "IScS", "门禁", "安防", "防淹门", "ISP", "安检", "人防门", "智慧车站"),
+            "风水电-正线": ("给排水", "通风空调", "低压配电"),
+            "门梯": ("垂直电梯", "自动扶梯", "站台门"),
+            "风水电-场段": ("通风空调-场段", "给排水-场段", "动照-场段"),
+        }
+        for parent_name, child_names in discipline_groups.items():
+            parent = connection.execute(
+                "SELECT id FROM workspace_professions WHERE name = ? COLLATE NOCASE", (parent_name,)
+            ).fetchone()
+            if parent:
+                for child_name in child_names:
+                    connection.execute(
+                        "UPDATE workspace_professions SET parent_id = ? WHERE name = ? COLLATE NOCASE AND id <> ?",
+                        (int(parent[0]), child_name, int(parent[0])),
+                    )
+        lines = connection.execute("SELECT id FROM workspace_lines").fetchall()
+        for line_row in lines:
+            for parent_name, child_names in discipline_groups.items():
+                parent = connection.execute(
+                "SELECT id FROM workspace_catalog_items WHERE category = 'disciplines' "
+                "AND line_id = ? AND name = ? COLLATE NOCASE",
+                    (int(line_row[0]), parent_name),
+                ).fetchone()
+                if not parent:
+                    continue
+                for child_name in child_names:
+                    connection.execute(
+                        "UPDATE workspace_catalog_items SET parent_id = ? "
+                        "WHERE category = 'disciplines' AND line_id = ? "
+                        "AND name = ? COLLATE NOCASE AND id <> ?",
+                        (str(parent[0]), int(line_row[0]), child_name, str(parent[0])),
+                    )
 
     def _row_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         return dict(row)
@@ -691,8 +751,9 @@ class WorkspaceRepository:
             with closing(self._connect()) as c, c:
                 self._ensure_profession_unique(c, payload)
                 cur = c.execute(
-                    "INSERT INTO workspace_professions(code, name, sort_order, is_enabled) VALUES (?, ?, ?, ?)",
-                    (payload.code, payload.name, payload.sort_order, int(payload.is_enabled)),
+                    "INSERT INTO workspace_professions(code, name, parent_id, sort_order, is_enabled) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (payload.code, payload.name, payload.parent_id, payload.sort_order, int(payload.is_enabled)),
                 )
                 return self._profession(
                     c.execute("SELECT * FROM workspace_professions WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -709,8 +770,9 @@ class WorkspaceRepository:
                 for item in payload.professions:
                     self._ensure_profession_unique(connection, item)
                     cursor = connection.execute(
-                        "INSERT INTO workspace_professions(code, name, sort_order, is_enabled) VALUES (?, ?, ?, ?)",
-                        (item.code, item.name, item.sort_order, int(item.is_enabled)),
+                        "INSERT INTO workspace_professions(code, name, parent_id, sort_order, is_enabled) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (item.code, item.name, item.parent_id, item.sort_order, int(item.is_enabled)),
                     )
                     row = connection.execute(
                         "SELECT * FROM workspace_professions WHERE id = ?", (cursor.lastrowid,)
@@ -728,6 +790,33 @@ class WorkspaceRepository:
         payload: ProfessionWriteRequest,
         profession_id: int | None = None,
     ) -> None:
+        if payload.parent_id is not None:
+            parent = connection.execute(
+                "SELECT parent_id FROM workspace_professions WHERE id = ?",
+                (payload.parent_id,),
+            ).fetchone()
+            if parent is None or (profession_id is not None and payload.parent_id == profession_id):
+                raise BusinessError(
+                    "父级专业不存在或不能作为自身的父级",
+                    "WORKSPACE_PROFESSION_PARENT_INVALID",
+                    status_code=422,
+                )
+            if parent["parent_id"] is not None:
+                raise BusinessError(
+                    "专业层级仅支持父级和子级两层",
+                    "WORKSPACE_PROFESSION_PARENT_INVALID",
+                    status_code=422,
+                )
+            has_children = connection.execute(
+                "SELECT 1 FROM workspace_professions WHERE parent_id = ? LIMIT 1",
+                (profession_id,),
+            ).fetchone() if profession_id is not None else None
+            if has_children:
+                raise BusinessError(
+                    "该专业已有子专业，不能再设置为子专业",
+                    "WORKSPACE_PROFESSION_PARENT_INVALID",
+                    status_code=422,
+                )
         query = "SELECT 1 FROM workspace_professions WHERE (code = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)"
         params: list[Any] = [payload.code, payload.name]
         if profession_id is not None:
@@ -742,11 +831,13 @@ class WorkspaceRepository:
             with closing(self._connect()) as c, c:
                 self._ensure_profession_unique(c, payload, profession_id)
                 cursor = c.execute(
-                    "UPDATE workspace_professions SET code = ?, name = ?, sort_order = ?, is_enabled = ?, "
+                    "UPDATE workspace_professions SET code = ?, name = ?, parent_id = ?, "
+                    "sort_order = ?, is_enabled = ?, "
                     "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
                     (
                         payload.code,
                         payload.name,
+                        payload.parent_id,
                         payload.sort_order,
                         int(payload.is_enabled),
                         profession_id,
@@ -2391,6 +2482,7 @@ class WorkspaceRepository:
             "id": int(row["id"]),
             "code": str(row["code"]),
             "name": str(row["name"]),
+            "parentId": int(row["parent_id"]) if row["parent_id"] is not None else None,
             "sortOrder": int(row["sort_order"]),
             "isEnabled": bool(row["is_enabled"]),
         }

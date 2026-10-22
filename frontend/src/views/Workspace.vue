@@ -34,6 +34,11 @@ const workspaceConfigsLoading = ref(false)
 let workspaceConfigRequestId = 0
 const integrationOptions = integrationProjects
 const availableProjects = computed(() => workspace.projects.filter((item) => !item.lineId || String(item.lineId) === String(workspace.selectedLineId)))
+const selectProject = (projectId) => {
+  workspace.setProject(projectId)
+  const project = availableProjects.value.find((item) => String(item.id) === String(projectId))
+  if (project?.professionId) workspace.setProfession(project.professionId)
+}
 const selectedIntegration = computed({
   get: () => excel.selectedIntegration,
   set: (value) => excel.setIntegration(value)
@@ -271,7 +276,7 @@ watch(selectedIntegration, (value) => {
     </div>
     <el-collapse-transition>
       <div v-if="isIntegrationSelected" class="integration-content">
-        <div class="integration-banner"><span>当前联调项目</span><el-select :model-value="workspace.selectedProjectId" class="project-select" placeholder="请选择联调项目" @change="workspace.setProject"><el-option v-for="project in availableProjects" :key="project.id" :label="`${project.code || project.engineCode} · ${project.name}`" :value="project.id" /></el-select></div>
+        <div class="integration-banner"><span>线路</span><el-select v-model="workspace.selectedLineId" class="line-select" placeholder="请选择线路" @change="workspace.setLine"><el-option v-for="line in workspace.lines" :key="line.id" :label="line.name" :value="line.id" /></el-select><span>当前联调项目</span><el-select :model-value="workspace.selectedProjectId" class="project-select" placeholder="请选择联调项目" @change="selectProject"><el-option v-for="project in availableProjects" :key="project.id" :label="`${project.code || project.engineCode} · ${project.name}`" :value="project.id" /></el-select></div>
         <el-skeleton v-if="workspaceConfigsLoading" :rows="3" animated />
         <template v-else-if="isWorkbenchAvailable">
         <el-card class="section-card"><template #header><b>1. 测试地点配置</b></template><LocationForm v-model="locationValue" /></el-card>
@@ -327,8 +332,9 @@ watch(selectedIntegration, (value) => {
 .integration-banner { display:flex;align-items:center;justify-content:flex-start;gap:10px;margin:0 0 14px;color:#73829a;font-size:13px; }
 .integration-banner > span { flex:none; }
 .project-select { width:min(360px, 100%); }
+.line-select { width: 132px; }
 .upload-card-header { display:flex;align-items:center;justify-content:space-between;gap:12px; }
-@media (max-width: 760px) { .workspace-title { align-items: flex-start; flex-direction: column; gap: 10px; } }
+@media (max-width: 760px) { .workspace-title { align-items: flex-start; flex-direction: column; gap: 10px; }.integration-banner { flex-wrap: wrap; } }
 @media (max-width: 520px) { .integration-banner { align-items:flex-start;flex-direction:column;gap:4px; } }
 @media (max-width: 520px) { .upload-card-header { align-items:flex-start;flex-direction:column; } }
 .match-stats { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; color: #62728a; font-size: 13px; }
