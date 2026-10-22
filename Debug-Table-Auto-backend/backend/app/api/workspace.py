@@ -24,11 +24,13 @@ from app.schemas.workspace import (
     DebugItemsBatchWriteRequest,
     DebugItemWriteRequest,
     LineWriteRequest,
+    ProfessionBatchWriteRequest,
     ProfessionWriteRequest,
     ProjectWriteRequest,
     ScopeSelection,
     UserWriteRequest,
     WorkspaceCatalogWriteRequest,
+    WorkspaceStationsBatchWriteRequest,
 )
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
@@ -149,16 +151,24 @@ def list_professions(request: Request) -> dict[str, object]:
 @router.post("/professions")
 def create_profession(payload: ProfessionWriteRequest, request: Request) -> dict[str, object]:
     user = _current_user(request)
-    if not _is_super(user):
-        raise BusinessError("只有超级管理员可以新增专业", "WORKSPACE_ADMIN_REQUIRED", status_code=403)
+    if not _is_super(user) and user.get("role") != ROLE_LINE_ADMIN:
+        raise BusinessError("只有超级管理员或线路管理员可以新增专业", "WORKSPACE_ADMIN_REQUIRED", status_code=403)
     return {"data": _repository(request).create_profession(payload)}
+
+
+@router.post("/professions/batch")
+def create_professions(payload: ProfessionBatchWriteRequest, request: Request) -> dict[str, object]:
+    user = _current_user(request)
+    if not _is_super(user) and user.get("role") != ROLE_LINE_ADMIN:
+        raise BusinessError("只有超级管理员或线路管理员可以新增专业", "WORKSPACE_ADMIN_REQUIRED", status_code=403)
+    return {"data": _repository(request).create_professions(payload)}
 
 
 @router.put("/professions/{profession_id}")
 def update_profession(profession_id: int, payload: ProfessionWriteRequest, request: Request) -> dict[str, object]:
     user = _current_user(request)
-    if not _is_super(user):
-        raise BusinessError("只有超级管理员可以编辑专业", "WORKSPACE_ADMIN_REQUIRED", status_code=403)
+    if not _is_super(user) and user.get("role") != ROLE_LINE_ADMIN:
+        raise BusinessError("只有超级管理员或线路管理员可以编辑专业", "WORKSPACE_ADMIN_REQUIRED", status_code=403)
     return {"data": _repository(request).update_profession(profession_id, payload)}
 
 
@@ -377,6 +387,15 @@ def create_workspace_catalog_item(payload: WorkspaceCatalogWriteRequest, request
     user = _current_user(request)
     _require_edit_scope(user, payload.scope)
     return {"data": _repository(request).save_catalog_item(payload)}
+
+
+@router.post("/catalog/stations/batch")
+def create_workspace_stations_batch(
+    payload: WorkspaceStationsBatchWriteRequest, request: Request
+) -> dict[str, object]:
+    user = _current_user(request)
+    _require_edit_scope(user, payload.scope)
+    return {"data": _repository(request).create_stations_batch(payload)}
 
 
 @router.put("/catalog/{item_id}")

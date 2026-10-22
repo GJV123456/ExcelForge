@@ -15,6 +15,7 @@ export const getWorkspaceCatalog = (params) => request.get('/api/workspace/catal
 export const saveWorkspaceCatalog = (id, data) => id
   ? request.put(`/api/workspace/catalog/${id}`, data)
   : request.post('/api/workspace/catalog', data)
+export const createWorkspaceStationsBatch = (data) => request.post('/api/workspace/catalog/stations/batch', data)
 export const setWorkspaceCatalogStatus = (id, enabled, scope) => request.post(`/api/workspace/catalog/${id}/status`, null, { params: { ...scope, enabled } })
 export const getWorkspaceUsers = () => request.get('/api/workspace/users')
 export const createWorkspaceUser = (data) => request.post('/api/workspace/users', data)
@@ -22,6 +23,7 @@ export const updateWorkspaceUser = (id, data) => request.put(`/api/workspace/use
 export const createWorkspaceLine = (data) => request.post('/api/workspace/lines', data)
 export const updateWorkspaceLine = (id, data) => request.put(`/api/workspace/lines/${id}`, data)
 export const createWorkspaceProfession = (data) => request.post('/api/workspace/professions', data)
+export const createWorkspaceProfessions = (data) => request.post('/api/workspace/professions/batch', data)
 export const updateWorkspaceProfession = (id, data) => request.put(`/api/workspace/professions/${id}`, data)
 export const createWorkspaceProject = (data) => request.post('/api/workspace/projects', data)
 export const updateWorkspaceProject = (id, data) => request.put(`/api/workspace/projects/${id}`, data)

@@ -275,7 +275,7 @@ watch(() => [dialogVisible.value, workspace.selectedLineId, form.professionId, f
           <el-dropdown @command="downloadTemplateChoice"><el-button :icon="Download">模板下载<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="data">测试数据导入模板</el-dropdown-item><el-dropdown-item command="config">联调配置规范模板（含样例）</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
           <label v-if="canEdit" class="upload-config-button"><input type="file" accept=".xlsx,.xls,.csv" @change="importConfigFile" />导入配置规范表</label>
           <el-button v-if="canEdit" type="primary" :icon="Plus" @click="openCreate">新增配置</el-button>
-          <el-button v-if="canEdit" :icon="CopyDocument" @click="loadCopyCandidates">复制其他线路 / 专业配置</el-button>
+          <el-button v-if="canEdit" :icon="CopyDocument" @click="loadCopyCandidates">复制其他线路联调规则配置</el-button>
         </div>
       </div>
     </div>

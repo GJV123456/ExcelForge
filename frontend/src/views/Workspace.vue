@@ -30,19 +30,25 @@ const historyDetailLoading = ref(false)
 const historyDetailVisible = ref(false)
 const historyDetail = ref(null)
 const workspaceConfigs = ref([])
+const workspaceConfigsLoading = ref(false)
+let workspaceConfigRequestId = 0
 const integrationOptions = integrationProjects
+const availableProjects = computed(() => workspace.projects.filter((item) => !item.lineId || String(item.lineId) === String(workspace.selectedLineId)))
 const selectedIntegration = computed({
   get: () => excel.selectedIntegration,
   set: (value) => excel.setIntegration(value)
 })
 const selectedProject = computed(() => {
-  const project = workspace.selectedProject
+  const project = availableProjects.value.find((item) => String(item.id) === String(workspace.selectedProjectId))
   if (!project) return null
   const legacy = integrationOptions.find((item) => item.code === (project.engineCode || project.code))
   return { ...project, code: project.engineCode || project.code, classificationProfile: legacy?.classificationProfile }
 })
 const isT19Selected = computed(() => Boolean(selectedProject.value?.engineCode === 'T19' || selectedProject.value?.code === 'T19'))
-const isIntegrationSelected = computed(() => workspace.isSelected)
+const isIntegrationSelected = computed(() => Boolean(workspace.selectedLineId && workspace.selectedProfessionId))
+const isWorkbenchAvailable = computed(() => Boolean(selectedProject.value && (isT19Selected.value || workspaceConfigs.value.length)))
+const effectiveProfessionId = computed(() => workspace.selectedProfessionId)
+const effectiveIntegrationCode = computed(() => selectedProject.value?.engineCode || selectedProject.value?.code || selectedIntegration.value)
 // 默认按站点测试，并使用站点基础资料中的第一个站点作为开始/结束站点。
 // 这样打开工作台后地点配置即可直接使用，同时仍可由用户修改。
 const location = reactive({
@@ -79,7 +85,7 @@ const baseTestContents = computed(() => {
       equipmentChinese,
       signalDescription,
       testContent,
-      integrationCode: selectedIntegration.value,
+      integrationCode: effectiveIntegrationCode.value,
       classificationProfile: selectedProject.value?.classificationProfile
     })
     const damperKey = String(equipmentCode || equipmentChinese || testContent).trim().toUpperCase()
@@ -124,9 +130,22 @@ const matchStats = computed(() => {
 })
 
 watch(preview, (value) => excel.setPreview(value), { immediate: true })
+watch(selectedProject, (project) => {
+  if (project) excel.setIntegration(project.engineCode || project.code || '')
+}, { immediate: true })
 const loadWorkspaceConfigs = async () => {
-  if (!workspace.isSelected) return
-  try { workspaceConfigs.value = (await getWorkspaceConfigs({ lineId: workspace.selectedLineId, professionId: workspace.selectedProfessionId, projectId: workspace.selectedProjectId, includeDisabled: true })).data?.data || [] } catch { workspaceConfigs.value = [] }
+  const requestId = ++workspaceConfigRequestId
+  if (!selectedProject.value || !effectiveProfessionId.value) { workspaceConfigs.value = []; return }
+  const params = { lineId: workspace.selectedLineId, professionId: effectiveProfessionId.value, projectId: selectedProject.value.id, includeDisabled: true }
+  workspaceConfigsLoading.value = true
+  try {
+    const result = (await getWorkspaceConfigs(params)).data?.data || []
+    if (requestId === workspaceConfigRequestId) workspaceConfigs.value = result
+  } catch {
+    if (requestId === workspaceConfigRequestId) workspaceConfigs.value = []
+  } finally {
+    if (requestId === workspaceConfigRequestId) workspaceConfigsLoading.value = false
+  }
 }
 watch(() => [workspace.selectedLineId, workspace.selectedProfessionId, workspace.selectedProjectId], loadWorkspaceConfigs, { immediate: true })
 
@@ -141,7 +160,7 @@ const clear = () => {
 }
 
 const validate = () => {
-  if (!selectedProject.value) return '请先选择联调项目'
+  if (!selectedProject.value) return '请先选择当前联调项目'
   const locationMessage = validateFormalLocation(location)
   if (locationMessage) return locationMessage
   if (!excel.rows.length) return '请先上传并解析 Excel 文件'
@@ -217,10 +236,10 @@ const submit = async () => {
   loading.value = true
   try {
     const response = await processExcel({
-      integrationCode: selectedIntegration.value,
+      integrationCode: effectiveIntegrationCode.value,
       lineId: workspace.selectedLineId,
-      professionId: workspace.selectedProfessionId,
-      projectId: workspace.selectedProjectId,
+      professionId: effectiveProfessionId.value,
+      projectId: selectedProject.value.id,
       sourceFilename: excel.file?.name || '',
       testLocation: buildTestLocation(location),
       testContents
@@ -249,8 +268,9 @@ watch(selectedIntegration, (value) => {
     </div>
     <el-collapse-transition>
       <div v-if="isIntegrationSelected" class="integration-content">
-        <div class="integration-banner"><strong>{{ selectedProject?.name }}</strong><span>当前联调项目</span></div>
-        <template v-if="isT19Selected">
+        <div class="integration-banner"><span>当前联调项目</span><el-select :model-value="workspace.selectedProjectId" class="project-select" placeholder="请选择联调项目" @change="workspace.setProject"><el-option v-for="project in availableProjects" :key="project.id" :label="`${project.code || project.engineCode} · ${project.name}`" :value="project.id" /></el-select></div>
+        <el-skeleton v-if="workspaceConfigsLoading" :rows="3" animated />
+        <template v-else-if="isWorkbenchAvailable">
         <el-card class="section-card"><template #header><b>1. 测试地点配置</b></template><LocationForm v-model="locationValue" /></el-card>
         <el-card class="section-card"><template #header><div class="upload-card-header"><b>2. Excel 上传与解析</b><el-button :icon="Download" @click="downloadInputTemplate">下载测试数据模板</el-button></div></template><UploadExcel @parsed="parsed" @clear="clear" /><el-alert v-if="excel.excelType" class="file-status" type="success" :closable="false" show-icon :title="`已识别：${excel.excelType === 'A' ? '人工处理版（直接使用测试内容）' : '原始设备版（需配置生成规则）'}，共 ${excel.rows.length} 条数据`" /><div v-if="excel.excelType && excel.headers.includes('联调配置编码')" class="match-stats"><span>源数据共：<b>{{ matchStats.total }}</b> 条</span><span class="stat-success">已匹配：<b>{{ matchStats.matched }}</b> 条</span><span class="stat-warning">未匹配：<b>{{ matchStats.unmatched }}</b> 条</span><span class="stat-muted">配置已停用：<b>{{ matchStats.disabled }}</b> 条</span></div></el-card>
         <el-card v-if="excel.excelType === 'B'" class="section-card"><template #header><b>3. 测试内容生成规则</b></template><RuleBuilder v-model="excel.rules" :available-fields="excel.headers" /></el-card>
@@ -258,8 +278,7 @@ watch(selectedIntegration, (value) => {
         <div v-if="excel.excelType" class="submit-panel"><el-button class="submit-button" type="primary" size="large" :icon="DocumentAdd" :loading="loading" :disabled="loading" @click="submit">{{ submitLabel }}</el-button></div>
         </template>
         <div v-else class="integration-placeholder">
-          <strong>{{ selectedProject?.name }} 子系统</strong>
-          <p>{{ selectedProject?.description || '该联调项目的专属工作区正在配置中。' }}</p>
+          <el-alert type="warning" :closable="false" show-icon title="该联调项目暂未配置联调表单规则，请联系线路管理员完成配置后再进行处理。" />
         </div>
       </div>
     </el-collapse-transition>
@@ -302,8 +321,12 @@ watch(selectedIntegration, (value) => {
 <style scoped>
 .workspace-title-block { display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:16px; }
 .workspace-title { gap: 18px; }
+.integration-banner { display:flex;align-items:center;justify-content:flex-start;gap:10px;margin:0 0 14px;color:#73829a;font-size:13px; }
+.integration-banner > span { flex:none; }
+.project-select { width:min(360px, 100%); }
 .upload-card-header { display:flex;align-items:center;justify-content:space-between;gap:12px; }
 @media (max-width: 760px) { .workspace-title { align-items: flex-start; flex-direction: column; gap: 10px; } }
+@media (max-width: 520px) { .integration-banner { align-items:flex-start;flex-direction:column;gap:4px; } }
 @media (max-width: 520px) { .upload-card-header { align-items:flex-start;flex-direction:column; } }
 .match-stats { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; color: #62728a; font-size: 13px; }
 .match-stats span { padding: 7px 11px; border: 1px solid #e4eaf3; border-radius: 7px; background: #f8fbff; }

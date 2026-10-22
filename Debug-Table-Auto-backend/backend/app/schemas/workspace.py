@@ -35,6 +35,10 @@ class ProfessionWriteRequest(ApiModel):
     is_enabled: bool = Field(default=True, alias="isEnabled")
 
 
+class ProfessionBatchWriteRequest(ApiModel):
+    professions: list[ProfessionWriteRequest] = Field(min_length=1, max_length=100)
+
+
 class ProjectWriteRequest(ApiModel):
     line_id: int | None = Field(default=None, alias="lineId", gt=0)
     profession_id: int = Field(alias="professionId", gt=0)
@@ -111,6 +115,14 @@ class WorkspaceCatalogWriteRequest(ApiModel):
     category: Literal["equipment_types", "disciplines", "stations"]
     code: str = Field(default="", max_length=100)
     name: Text
+    description: str = Field(default="", max_length=2000)
+    sort_order: int = Field(default=1, alias="sortOrder", gt=0)
+    is_enabled: bool = Field(default=True, alias="isEnabled")
+
+
+class WorkspaceStationsBatchWriteRequest(ApiModel):
+    scope: ScopeSelection
+    names: list[Text] = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=2000)
     sort_order: int = Field(default=1, alias="sortOrder", gt=0)
     is_enabled: bool = Field(default=True, alias="isEnabled")

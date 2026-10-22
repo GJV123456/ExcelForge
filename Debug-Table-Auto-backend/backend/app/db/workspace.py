@@ -22,11 +22,13 @@ from app.schemas.workspace import (
     DebugItemsBatchWriteRequest,
     DebugItemWriteRequest,
     LineWriteRequest,
+    ProfessionBatchWriteRequest,
     ProfessionWriteRequest,
     ProjectWriteRequest,
     ScopeSelection,
     UserWriteRequest,
     WorkspaceCatalogWriteRequest,
+    WorkspaceStationsBatchWriteRequest,
 )
 from app.security import hash_password
 
@@ -484,6 +486,57 @@ class WorkspaceRepository:
         except sqlite3.IntegrityError as exc:
             raise BusinessError("同一范围下的名称或编码已存在", "WORKSPACE_CATALOG_EXISTS", status_code=409) from exc
 
+    def create_stations_batch(self, payload: WorkspaceStationsBatchWriteRequest) -> list[dict[str, Any]]:
+        """Create several line-shared stations in one transaction."""
+        self.ensure_schema()
+        self.get_scope(payload.scope)
+        names = [name.strip() for name in payload.names]
+        if len({name.casefold() for name in names}) != len(names):
+            raise BusinessError("站点名称重复，请修改后再保存", "WORKSPACE_CATALOG_EXISTS", status_code=409)
+        try:
+            with closing(self._connect()) as connection, connection:
+                created = []
+                for index, name in enumerate(names):
+                    duplicate = connection.execute(
+                        """SELECT 1 FROM workspace_catalog_items
+                        WHERE category = 'stations' AND line_id = ?
+                        AND (name = ? COLLATE NOCASE OR code = ? COLLATE NOCASE)""",
+                        (payload.scope.line_id, name, name),
+                    ).fetchone()
+                    if duplicate:
+                        raise BusinessError(
+                            f"站点“{name}”已存在，未新增任何站点",
+                            "WORKSPACE_CATALOG_EXISTS",
+                            status_code=409,
+                        )
+                    item_id = uuid4().hex
+                    connection.execute(
+                        """INSERT INTO workspace_catalog_items
+                        (id, category, line_id, profession_id, project_id, code, name,
+                         description, sort_order, is_enabled)
+                        VALUES (?, 'stations', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            item_id,
+                            payload.scope.line_id,
+                            payload.scope.profession_id,
+                            payload.scope.project_id,
+                            name,
+                            name,
+                            payload.description,
+                            payload.sort_order + index,
+                            int(payload.is_enabled),
+                        ),
+                    )
+                    row = connection.execute(
+                        "SELECT * FROM workspace_catalog_items WHERE id = ?", (item_id,)
+                    ).fetchone()
+                    created.append(self._catalog_item(row))
+                return created
+        except sqlite3.IntegrityError as exc:
+            raise BusinessError(
+                "站点名称重复或已存在，未新增任何站点", "WORKSPACE_CATALOG_EXISTS", status_code=409
+            ) from exc
+
     @staticmethod
     def _catalog_item(row: sqlite3.Row) -> dict[str, Any]:
         return {
@@ -618,6 +671,7 @@ class WorkspaceRepository:
         self.ensure_schema()
         try:
             with closing(self._connect()) as c, c:
+                self._ensure_profession_unique(c, payload)
                 cur = c.execute(
                     "INSERT INTO workspace_professions(code, name, sort_order, is_enabled) VALUES (?, ?, ?, ?)",
                     (payload.code, payload.name, payload.sort_order, int(payload.is_enabled)),
@@ -628,10 +682,47 @@ class WorkspaceRepository:
         except sqlite3.IntegrityError as exc:
             raise BusinessError("专业编码或名称已存在", "WORKSPACE_PROFESSION_EXISTS", status_code=409) from exc
 
+    def create_professions(self, payload: ProfessionBatchWriteRequest) -> list[dict[str, Any]]:
+        """Create a set of professions atomically so partial imports are impossible."""
+        self.ensure_schema()
+        try:
+            with closing(self._connect()) as connection, connection:
+                created = []
+                for item in payload.professions:
+                    self._ensure_profession_unique(connection, item)
+                    cursor = connection.execute(
+                        "INSERT INTO workspace_professions(code, name, sort_order, is_enabled) VALUES (?, ?, ?, ?)",
+                        (item.code, item.name, item.sort_order, int(item.is_enabled)),
+                    )
+                    row = connection.execute(
+                        "SELECT * FROM workspace_professions WHERE id = ?", (cursor.lastrowid,)
+                    ).fetchone()
+                    created.append(self._profession(row))
+                return created
+        except sqlite3.IntegrityError as exc:
+            raise BusinessError(
+                "专业编码或名称已存在，未新增任何专业", "WORKSPACE_PROFESSION_EXISTS", status_code=409
+            ) from exc
+
+    @staticmethod
+    def _ensure_profession_unique(
+        connection: sqlite3.Connection,
+        payload: ProfessionWriteRequest,
+        profession_id: int | None = None,
+    ) -> None:
+        query = "SELECT 1 FROM workspace_professions WHERE (code = ? COLLATE NOCASE OR name = ? COLLATE NOCASE)"
+        params: list[Any] = [payload.code, payload.name]
+        if profession_id is not None:
+            query += " AND id != ?"
+            params.append(profession_id)
+        if connection.execute(query, params).fetchone():
+            raise BusinessError("专业编码或名称已存在", "WORKSPACE_PROFESSION_EXISTS", status_code=409)
+
     def update_profession(self, profession_id: int, payload: ProfessionWriteRequest) -> dict[str, Any]:
         self.ensure_schema()
         try:
             with closing(self._connect()) as c, c:
+                self._ensure_profession_unique(c, payload, profession_id)
                 cursor = c.execute(
                     "UPDATE workspace_professions SET code = ?, name = ?, sort_order = ?, is_enabled = ?, "
                     "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
@@ -920,12 +1011,6 @@ class WorkspaceRepository:
                         "debug_subitem_id": source["debugSubitemId"],
                         "debug_division_id": source.get("debugDivisionId"),
                     }]
-                if not classifications:
-                    raise BusinessError(
-                        f"来源配置“{source['configCode']}”尚未关联调试子项，请先保存其调试子项后再复制",
-                        "WORKSPACE_COPY_SOURCE_CLASSIFICATION_REQUIRED",
-                        status_code=409,
-                    )
                 for classification in classifications:
                     subitem = connection.execute(
                         "SELECT name FROM workspace_debug_items WHERE id = ?",
@@ -938,11 +1023,6 @@ class WorkspaceRepository:
                             "WORKSPACE_COPY_DEBUG_HIERARCHY_REQUIRED",
                             status_code=409,
                         )
-                    division_id = classification["debug_division_id"]
-                    if division_id:
-                        target_subitem = target_subitem_by_name[subitem["name"].casefold()]
-                        # Divisions are optional at the destination. The config
-                        # can still be copied under its matching subitem.
         for source_id in ids:
             source = self.get_config(source_id, include_disabled=True)
             if source is None:
@@ -987,6 +1067,8 @@ class WorkspaceRepository:
                     source_items = {str(row["id"]): row for row in rows}
 
             mapped_classifications: list[tuple[str, str | None]] = []
+            if not classifications and len(target_subitems) == 1:
+                mapped_classifications.append((target_subitems[0]["id"], None))
             for classification in classifications:
                 source_subitem = source_items.get(str(classification["debug_subitem_id"]))
                 if source_subitem is None or source_subitem["category"] != "debug_subitems":
@@ -1535,7 +1617,8 @@ class WorkspaceRepository:
         }
         grouped: dict[str, dict[str, Any]] = {}
         current_config_key = ""
-        for row_number, raw in enumerate(payload.rows, start=2):
+        for row_number, raw_values in enumerate(payload.rows, start=2):
+            raw = {str(key).replace("\ufeff", "").strip(): value for key, value in raw_values.items()}
             code = str(raw.get("联调配置编码", raw.get("configCode", ""))).strip()
             if code:
                 current_config_key = code.casefold()
@@ -1878,7 +1961,8 @@ class WorkspaceRepository:
         }
         incoming: dict[str, list[dict[str, object]]] = {}
         current = ""
-        for index, row in enumerate(payload.rows, start=2):
+        for index, raw_row in enumerate(payload.rows, start=2):
+            row = {str(key).replace("\ufeff", "").strip(): value for key, value in raw_row.items()}
             code = str(row.get("联调配置编码", row.get("configCode", "")) or "").strip()
             if code:
                 current = code

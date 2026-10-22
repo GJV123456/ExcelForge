@@ -237,13 +237,14 @@ def test_workspace_config_ids_aliases_and_scope_permissions(tmp_path: Path) -> N
             },
         )
         assert unclassified_source.status_code == 200, unclassified_source.text
-        rejected_unclassified_copy = client.post(
+        unclassified_copy = client.post(
             "/api/workspace/configs/copy",
             headers=admin,
             json={"sourceConfigId": unclassified_source.json()["data"]["id"], "target": target},
         )
-        assert rejected_unclassified_copy.status_code == 409
-        assert rejected_unclassified_copy.json()["code"] == "WORKSPACE_COPY_SOURCE_CLASSIFICATION_REQUIRED"
+        assert unclassified_copy.status_code == 200, unclassified_copy.text
+        assert unclassified_copy.json()["data"][0]["debugSubitemId"] == target_subitem_seed.json()["data"]["id"]
+        assert unclassified_copy.json()["data"][0]["debugDivisionId"] is None
         target_subitems = client.get(
             "/api/workspace/debug-items",
             headers=admin,
@@ -303,6 +304,49 @@ def test_workspace_config_ids_aliases_and_scope_permissions(tmp_path: Path) -> N
         assert changed_user.status_code == 200, changed_user.text
         assert changed_user.json()["data"]["displayName"] == "更新名称"
         line_admin = _login(client, "line-admin")
+        current_profession = next(
+            item for item in client.get("/api/workspace/professions", headers=line_admin).json()["data"]
+            if item["id"] == profession["id"]
+        )
+        edited_profession = client.put(
+            f"/api/workspace/professions/{profession['id']}",
+            headers=line_admin,
+            json={
+                "code": current_profession["code"],
+                "name": "线路管理员可编辑专业",
+                "sortOrder": current_profession["sortOrder"],
+                "isEnabled": current_profession["isEnabled"],
+            },
+        )
+        assert edited_profession.status_code == 200, edited_profession.text
+        assert edited_profession.json()["data"]["name"] == "线路管理员可编辑专业"
+        added_professions = client.post(
+            "/api/workspace/professions/batch",
+            headers=line_admin,
+            json={
+                "professions": [
+                    {"code": "FSD", "name": "风水电", "sortOrder": 2},
+                    {"code": "TX2", "name": "通信专业", "sortOrder": 3},
+                ]
+            },
+        )
+        assert added_professions.status_code == 200, added_professions.text
+        assert [item["code"] for item in added_professions.json()["data"]] == ["FSD", "TX2"]
+        rejected_batch = client.post(
+            "/api/workspace/professions/batch",
+            headers=line_admin,
+            json={
+                "professions": [
+                    {"code": "NEW", "name": "不会部分保存", "sortOrder": 4},
+                    {"code": "FSD", "name": "重复专业", "sortOrder": 5},
+                ]
+            },
+        )
+        assert rejected_batch.status_code == 409
+        assert not any(
+            item["code"] == "NEW"
+            for item in client.get("/api/workspace/professions", headers=line_admin).json()["data"]
+        )
         # Project codes belong to a line and cannot be duplicated by profession.
         other_profession = client.post(
             "/api/workspace/professions",
@@ -398,6 +442,17 @@ def test_workspace_config_ids_aliases_and_scope_permissions(tmp_path: Path) -> N
         )
         assert professional_created.status_code == 200, professional_created.text
         professional = _login(client, "profession-editor", "x")
+        forbidden_profession_edit = client.put(
+            f"/api/workspace/professions/{profession['id']}",
+            headers=professional,
+            json={
+                "code": profession["code"],
+                "name": "不得修改",
+                "sortOrder": profession["sortOrder"],
+                "isEnabled": True,
+            },
+        )
+        assert forbidden_profession_edit.status_code == 403
         other_scope = {
             "lineId": line["id"],
             "professionId": other_profession["id"],
@@ -499,14 +554,32 @@ def test_workspace_config_ids_aliases_and_scope_permissions(tmp_path: Path) -> N
                 },
                 "rows": [
                     {
-                        "联调配置编码": "T19-气灭测试",
-                        "调试子项": "自动生成编码的调试子项",
+                        " 联调配置编码 ": "T19-气灭测试",
+                        " 调试子项 ": "自动生成编码的调试子项",
                         "调试分项": "",
                         "步骤序号": 1,
                         "操作步骤": "执行气灭手自动状态测试",
                         "输出序号": 1,
                         "预期结果": "FAS主机收到正确手动状态报警信息",
-                    }
+                    },
+                    {
+                        "联调配置编码": "",
+                        "调试子项": "",
+                        "调试分项": "",
+                        "步骤序号": 1,
+                        "操作步骤": "",
+                        "输出序号": 2,
+                        "预期结果": "FAS图文工作站收到正确手动状态报警信息",
+                    },
+                    {
+                        "联调配置编码": "",
+                        "调试子项": "",
+                        "调试分项": "",
+                        "步骤序号": 1,
+                        "操作步骤": "",
+                        "输出序号": 3,
+                        "预期结果": "综合监控收到正确手动状态报警和事件",
+                    },
                 ],
             },
         )
@@ -514,6 +587,14 @@ def test_workspace_config_ids_aliases_and_scope_permissions(tmp_path: Path) -> N
         direct_subitem_config = direct_subitem_import.json()["data"][0]
         assert direct_subitem_config["debugSubitemId"]
         assert direct_subitem_config["debugDivisionId"] is None
+        assert len(direct_subitem_config["steps"][0]["results"]) == 3
+        persisted_subitem_config = client.get(
+            "/api/workspace/configs",
+            headers=professional,
+            params=scope,
+        ).json()["data"]
+        direct_subitem_config = next(item for item in persisted_subitem_config if item["configCode"] == "T19-气灭测试")
+        assert direct_subitem_config["debugSubitemId"]
         direct_subitem_list = client.get(
             "/api/workspace/configs",
             headers=professional,
@@ -1051,6 +1132,37 @@ def test_workspace_catalog_is_scoped_and_independent(tmp_path: Path) -> None:
             },
         )
         assert shared_station.status_code == shared_discipline.status_code == 200
+        batch_stations = client.post(
+            "/api/workspace/catalog/stations/batch",
+            headers=admin,
+            json={
+                "scope": scope,
+                "names": ["站厅层", "站台层"],
+                "sortOrder": 10,
+                "description": "批量导入站点",
+                "isEnabled": True,
+            },
+        )
+        assert batch_stations.status_code == 200, batch_stations.text
+        assert [item["sortOrder"] for item in batch_stations.json()["data"]] == [10, 11]
+        station_rows = client.get(
+            "/api/workspace/catalog",
+            headers=admin,
+            params={**scope, "category": "stations"},
+        ).json()["data"]
+        assert [item["sortOrder"] for item in station_rows] == [1, 10, 11]
+        rejected_station_batch = client.post(
+            "/api/workspace/catalog/stations/batch",
+            headers=admin,
+            json={"scope": scope, "names": ["不应部分保存", "嘉庚体育馆站"], "sortOrder": 12},
+        )
+        assert rejected_station_batch.status_code == 409
+        station_rows_after_rejection = client.get(
+            "/api/workspace/catalog",
+            headers=admin,
+            params={**scope, "category": "stations", "includeDisabled": True},
+        ).json()["data"]
+        assert not any(item["name"] == "不应部分保存" for item in station_rows_after_rejection)
         second_profession = client.post(
             "/api/workspace/professions",
             headers=admin,
@@ -1081,9 +1193,9 @@ def test_workspace_catalog_is_scoped_and_independent(tmp_path: Path) -> None:
                 headers=admin,
                 params={**second_scope, "category": category},
             )
-            assert [row["name"] for row in shared.json()["data"]] == [
-                "嘉庚体育馆站" if category == "stations" else "自动化"
-            ]
+            assert [row["name"] for row in shared.json()["data"]] == (
+                ["嘉庚体育馆站", "站厅层", "站台层"] if category == "stations" else ["自动化"]
+            )
         other_line = client.post(
             "/api/workspace/lines",
             headers=admin,

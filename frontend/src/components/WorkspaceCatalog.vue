@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { getWorkspaceCatalog, saveWorkspaceCatalog, setWorkspaceCatalogStatus } from '../api/workspace'
+import { createWorkspaceStationsBatch, getWorkspaceCatalog, saveWorkspaceCatalog, setWorkspaceCatalogStatus } from '../api/workspace'
 import { useWorkspaceStore } from '../store/workspace'
 import { useUserStore } from '../store/user'
 import { getApiErrorMessage } from '../utils/httpError'
@@ -33,6 +33,10 @@ const categoryMeta = computed(() => ({
 const form = reactive({ code: '', name: '', description: '', sortOrder: 1, isEnabled: true })
 const enabledCount = computed(() => items.value.filter((item) => item.isEnabled).length)
 const catalogProjectId = computed(() => workspace.selectedProjectId || workspace.projects[0]?.id || 1)
+const sortCatalogItems = (rows) => [...rows].sort((left, right) =>
+  (Number(left.sortOrder) || 0) - (Number(right.sortOrder) || 0)
+  || String(left.name || '').localeCompare(String(right.name || ''), 'zh-CN', { numeric: true })
+  || String(left.id).localeCompare(String(right.id)))
 const isLineSharedCategory = computed(() => ['disciplines', 'stations'].includes(props.category))
 const hasCatalogScope = computed(() => props.category === 'disciplines'
   ? Boolean(workspace.selectedLineId && workspace.selectedProfessionId)
@@ -45,7 +49,7 @@ const load = async () => {
   try {
     const response = await getWorkspaceCatalog({ ...scopePayload(),
       category: props.category, includeDisabled: canEdit.value })
-    items.value = response.data?.data || []
+    items.value = sortCatalogItems(response.data?.data || [])
   } catch (error) { ElMessage.error(await getApiErrorMessage(error)) } finally { loading.value = false }
 }
 const openCreate = () => {
@@ -69,11 +73,17 @@ const save = async () => {
   saving.value = true
   let savedCount = 0
   try {
-    for (const [index, name] of names.entries()) {
-      await saveWorkspaceCatalog(editingId.value || null, { scope: scopePayload(), category: props.category,
-        code: editingId.value ? (form.code.trim() || name) : name, name, description: form.description.trim(), sortOrder: editingId.value ? form.sortOrder : form.sortOrder + index, isEnabled: form.isEnabled })
-      savedCount += 1
-      if (editingId.value) break
+    if (props.category === 'stations' && !editingId.value) {
+      await createWorkspaceStationsBatch({ scope: scopePayload(), names, description: form.description.trim(),
+        sortOrder: Number(form.sortOrder), isEnabled: form.isEnabled })
+      savedCount = names.length
+    } else {
+      for (const [index, name] of names.entries()) {
+        await saveWorkspaceCatalog(editingId.value || null, { scope: scopePayload(), category: props.category,
+          code: editingId.value ? (form.code.trim() || name) : name, name, description: form.description.trim(), sortOrder: editingId.value ? form.sortOrder : form.sortOrder + index, isEnabled: form.isEnabled })
+        savedCount += 1
+        if (editingId.value) break
+      }
     }
     dialogVisible.value = false
     ElMessage.success(editingId.value ? '配置已更新' : `已新增 ${savedCount} 个${categoryMeta.value.title}`)
